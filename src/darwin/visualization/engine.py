@@ -717,7 +717,9 @@ class VisualizationEngine(param.Parameterized):
 
             if solutions_reduced.shape[1] > 2:
                 # Use t-SNE for final 2D projection
-                tsne = TSNE(n_components=2, random_state=42)
+                # Adjust perplexity for small datasets
+                perplexity = min(30, solutions_reduced.shape[0] - 1, 5)
+                tsne = TSNE(n_components=2, random_state=42, perplexity=perplexity)
                 solutions_2d = tsne.fit_transform(solutions_reduced)
             else:
                 solutions_2d = solutions_reduced
@@ -949,7 +951,7 @@ class VisualizationEngine(param.Parameterized):
                     <strong>Total Generations:</strong><br>{total_generations}
                 </div>
                 <div style='padding: 10px; background: #f0f0f0; border-radius: 5px;'>
-                    <strong>Best Overall Fitness:</strong><br>{best_overall_fitness:.4f if best_overall_fitness != float('-inf') else 'N/A'}
+                    <strong>Best Overall Fitness:</strong><br>{'N/A' if best_overall_fitness == float('-inf') else f'{best_overall_fitness:.4f}'}
                 </div>
                 <div style='padding: 10px; background: #f0f0f0; border-radius: 5px;'>
                     <strong>Status:</strong><br>{'Monitoring' if self.is_monitoring else 'Static'}

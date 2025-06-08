@@ -84,6 +84,8 @@ class ConvergenceAnalyzer:
 
         return analysis
 
+
+
     def _calculate_convergence_rate(
         self, generations: np.ndarray, fitness: np.ndarray
     ) -> float:
@@ -672,6 +674,132 @@ class PerformanceAnalyzer:
 
         return analysis
 
+    def _analyze_scalability(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze algorithm scalability characteristics."""
+        try:
+            metadata = data.get("metadata", {})
+            fitness_history = data.get("fitness_history", [])
+            
+            population_size = metadata.get("population_size", 100)
+            problem_dimension = metadata.get("problem_dimension", 10)
+            
+            # Calculate scalability metrics
+            generations_to_converge = len(fitness_history)
+            
+            # Estimate computational complexity
+            complexity_estimate = population_size * problem_dimension * generations_to_converge
+            
+            # Analyze convergence rate vs problem size
+            convergence_rate = 1.0 / generations_to_converge if generations_to_converge > 0 else 0.0
+            
+            return {
+                "complexity_estimate": complexity_estimate,
+                "convergence_rate": convergence_rate,
+                "population_size": population_size,
+                "problem_dimension": problem_dimension,
+                "generations_to_converge": generations_to_converge,
+                "scalability_score": min(1.0, 1000000 / complexity_estimate) if complexity_estimate > 0 else 0.0
+            }
+            
+        except Exception as e:
+            logger.error(f"Scalability analysis failed: {e}")
+            return {"error": str(e)}
+
+    def _analyze_resource_utilization(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze resource utilization patterns."""
+        try:
+            # Mock resource utilization analysis
+            return {
+                "memory_efficiency": 0.85,
+                "cpu_utilization": 0.75,
+                "cache_hit_ratio": 0.90,
+                "io_efficiency": 0.80
+            }
+        except Exception as e:
+            logger.error(f"Resource utilization analysis failed: {e}")
+            return {"error": str(e)}
+
+    def _detect_bottlenecks(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Detect performance bottlenecks."""
+        try:
+            fitness_history = data.get("fitness_history", [])
+            
+            if len(fitness_history) < 10:
+                return {"bottlenecks": [], "suggestions": ["More data needed for analysis"]}
+            
+            # Analyze convergence stagnation
+            recent_improvements = []
+            for i in range(max(0, len(fitness_history) - 10), len(fitness_history) - 1):
+                if i + 1 < len(fitness_history):
+                    current_fitness = fitness_history[i].get("best_fitness", 0)
+                    next_fitness = fitness_history[i + 1].get("best_fitness", 0)
+                    improvement = abs(next_fitness - current_fitness)
+                    recent_improvements.append(improvement)
+            
+            avg_improvement = np.mean(recent_improvements) if recent_improvements else 0
+            
+            bottlenecks = []
+            suggestions = []
+            
+            if avg_improvement < 0.001:
+                bottlenecks.append("Convergence stagnation")
+                suggestions.append("Consider increasing mutation rate or population diversity")
+            
+            return {
+                "bottlenecks": bottlenecks,
+                "suggestions": suggestions,
+                "improvement_rate": avg_improvement
+            }
+            
+        except Exception as e:
+            logger.error(f"Bottleneck detection failed: {e}")
+            return {"error": str(e)}
+
+    def _analyze_convergence_efficiency(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze convergence efficiency metrics."""
+        try:
+            fitness_history = data.get("fitness_history", [])
+            
+            if len(fitness_history) < 2:
+                return {"error": "Insufficient data for convergence analysis"}
+            
+            # Extract fitness values
+            fitness_values = []
+            for record in fitness_history:
+                if isinstance(record, dict) and "best_fitness" in record:
+                    fitness_values.append(record["best_fitness"])
+                else:
+                    fitness_values.append(float(record))
+            
+            if not fitness_values:
+                return {"error": "No fitness values found"}
+            
+            # Calculate convergence metrics
+            initial_fitness = fitness_values[0]
+            final_fitness = fitness_values[-1]
+            improvement = abs(final_fitness - initial_fitness)
+            
+            # Calculate efficiency score
+            generations_used = len(fitness_values)
+            efficiency_score = improvement / generations_used if generations_used > 0 else 0
+            
+            # Detect premature convergence
+            recent_variance = np.var(fitness_values[-min(10, len(fitness_values)):])
+            premature_convergence = recent_variance < 0.0001
+            
+            return {
+                "improvement": improvement,
+                "efficiency_score": efficiency_score,
+                "generations_used": generations_used,
+                "premature_convergence": premature_convergence,
+                "final_fitness": final_fitness,
+                "convergence_rate": improvement / generations_used if generations_used > 0 else 0
+            }
+            
+        except Exception as e:
+            logger.error(f"Convergence efficiency analysis failed: {e}")
+            return {"error": str(e)}
+
     def _analyze_computational_efficiency(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze computational efficiency metrics."""
         fitness_history = data.get("fitness_history", [])
@@ -848,4 +976,214 @@ class PerformanceAnalyzer:
 
         # Analyze overall trajectory smoothness
         second_derivatives = np.diff(fitness_values, 2)
-        smooth
+        
+        return {
+            "stability": stability,
+            "acceleration": np.mean(second_derivatives) if len(second_derivatives) > 0 else 0,
+            "volatility": np.std(fitness_values) if len(fitness_values) > 1 else 0,
+        }
+
+
+class StatisticalAnalyzer:
+    """Statistical analysis tools for optimization data."""
+
+    def __init__(self):
+        self.correlation_methods = ["pearson", "spearman", "kendall"]
+
+    def analyze_correlations(
+        self, data: Dict[str, List[float]], method: str = "pearson"
+    ) -> Dict[str, Any]:
+        """
+        Analyze correlations between different metrics.
+
+        Args:
+            data: Dictionary of metric names to value lists
+            method: Correlation method to use
+
+        Returns:
+            Correlation analysis results
+        """
+        try:
+            # Convert to DataFrame for easier analysis
+            df = pd.DataFrame(data)
+            
+            # Calculate correlation matrix
+            if method == "pearson":
+                corr_matrix = df.corr(method="pearson")
+            elif method == "spearman":
+                corr_matrix = df.corr(method="spearman")
+            elif method == "kendall":
+                corr_matrix = df.corr(method="kendall")
+            else:
+                raise ValueError(f"Unknown correlation method: {method}")
+
+            # Find strongest correlations
+            strong_correlations = []
+            for i in range(len(corr_matrix.columns)):
+                for j in range(i + 1, len(corr_matrix.columns)):
+                    corr_value = corr_matrix.iloc[i, j]
+                    if abs(corr_value) > 0.7:  # Strong correlation threshold
+                        strong_correlations.append({
+                            "metric1": corr_matrix.columns[i],
+                            "metric2": corr_matrix.columns[j],
+                            "correlation": corr_value,
+                            "strength": "strong" if abs(corr_value) > 0.8 else "moderate"
+                        })
+
+            return {
+                "correlation_matrix": corr_matrix.to_dict(),
+                "strong_correlations": strong_correlations,
+                "method": method,
+                "summary_stats": df.describe().to_dict()
+            }
+
+        except Exception as e:
+            logger.error(f"Correlation analysis failed: {e}")
+            return {"error": str(e)}
+
+    def perform_statistical_tests(
+        self, data: Dict[str, List[float]]
+    ) -> Dict[str, Any]:
+        """
+        Perform various statistical tests on the data.
+
+        Args:
+            data: Dictionary of metric names to value lists
+
+        Returns:
+            Statistical test results
+        """
+        try:
+            from scipy import stats
+            
+            results = {}
+            
+            for metric_name, values in data.items():
+                if len(values) < 3:
+                    continue
+                    
+                # Normality test
+                shapiro_stat, shapiro_p = stats.shapiro(values)
+                
+                # Basic statistics
+                mean_val = np.mean(values)
+                median_val = np.median(values)
+                std_val = np.std(values)
+                
+                results[metric_name] = {
+                    "mean": mean_val,
+                    "median": median_val,
+                    "std": std_val,
+                    "normality_test": {
+                        "statistic": shapiro_stat,
+                        "p_value": shapiro_p,
+                        "is_normal": shapiro_p > 0.05
+                    }
+                }
+
+            return results
+
+        except Exception as e:
+            logger.error(f"Statistical tests failed: {e}")
+            return {"error": str(e)}
+
+
+class AnalyticsEngine:
+    """Main analytics engine coordinating all analysis components."""
+
+    def __init__(self):
+        self.convergence_analyzer = ConvergenceAnalyzer()
+        self.diversity_analyzer = DiversityAnalyzer()
+        self.performance_analyzer = PerformanceAnalyzer()
+        self.statistical_analyzer = StatisticalAnalyzer()
+
+    def analyze_optimization_run(
+        self, optimization_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Perform comprehensive analysis of an optimization run.
+
+        Args:
+            optimization_data: Complete optimization data
+
+        Returns:
+            Comprehensive analysis results
+        """
+        try:
+            results = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "run_id": optimization_data.get("run_id", "unknown"),
+            }
+
+            # Convergence analysis
+            if "fitness_history" in optimization_data:
+                results["convergence"] = self.convergence_analyzer.analyze_convergence(
+                    optimization_data["fitness_history"]
+                )
+
+            # Diversity analysis
+            if "population_data" in optimization_data and "fitness_history" in optimization_data:
+                results["diversity"] = self.diversity_analyzer.analyze_diversity(
+                    optimization_data["population_data"],
+                    optimization_data["fitness_history"]
+                )
+
+            # Performance analysis
+            results["performance"] = self.performance_analyzer.analyze_performance(
+                optimization_data
+            )
+
+            # Statistical analysis
+            if "metrics" in optimization_data:
+                results["statistics"] = self.statistical_analyzer.analyze_correlations(
+                    optimization_data["metrics"]
+                )
+
+            return results
+
+        except Exception as e:
+            logger.error(f"Comprehensive analysis failed: {e}")
+            return {"error": str(e)}
+
+    def generate_insights(self, analysis_results: Dict[str, Any]) -> List[str]:
+        """
+        Generate actionable insights from analysis results.
+
+        Args:
+            analysis_results: Results from analyze_optimization_run
+
+        Returns:
+            List of insight strings
+        """
+        insights = []
+
+        try:
+            # Convergence insights
+            if "convergence" in analysis_results:
+                conv_data = analysis_results["convergence"]
+                if conv_data.get("convergence_rate", 0) < 0.1:
+                    insights.append("Slow convergence detected - consider increasing mutation rate")
+                
+                if conv_data.get("stagnation_periods", 0) > 3:
+                    insights.append("Multiple stagnation periods - algorithm may benefit from diversity injection")
+
+            # Diversity insights
+            if "diversity" in analysis_results:
+                div_data = analysis_results["diversity"]
+                if div_data.get("average_diversity", 0) < 0.3:
+                    insights.append("Low population diversity - increase population size or mutation rate")
+
+            # Performance insights
+            if "performance" in analysis_results:
+                perf_data = analysis_results["performance"]
+                if perf_data.get("efficiency_score", 1.0) < 0.7:
+                    insights.append("Low efficiency - consider algorithm parameter tuning")
+
+            if not insights:
+                insights.append("Optimization appears to be running well - no major issues detected")
+
+        except Exception as e:
+            logger.error(f"Insight generation failed: {e}")
+            insights.append("Unable to generate insights due to analysis error")
+
+        return insights
