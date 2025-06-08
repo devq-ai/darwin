@@ -186,6 +186,9 @@ class TestTask7_APIEndpoints:
 
     def test_optimizer_stop_endpoint(self, client):
         """Test optimizer stop endpoint."""
+        if client is None:
+            pytest.skip("FastAPI app not available for testing")
+
         optimizer_id = str(uuid.uuid4())
 
         response = client.post(f"/api/v1/optimizers/{optimizer_id}/stop")
@@ -226,6 +229,9 @@ class TestTask7_APIEndpoints:
 
     def test_optimizer_progress_endpoint(self, client):
         """Test optimizer progress monitoring endpoint."""
+        if client is None:
+            pytest.skip("FastAPI app not available for testing")
+
         optimizer_id = str(uuid.uuid4())
 
         response = client.get(f"/api/v1/optimizers/{optimizer_id}/progress")

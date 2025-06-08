@@ -139,6 +139,7 @@ def task_validator(project_root):
 def client(project_root):
     """Create test client for FastAPI app."""
     import sys
+    import traceback
 
     from fastapi.testclient import TestClient
 
@@ -153,17 +154,20 @@ def client(project_root):
         from darwin.api.main import app
 
         return TestClient(app)
-    except ImportError:
+    except ImportError as e:
         # Return None if FastAPI app not yet implemented
         # Tests should check if client is None before proceeding
+        print(f"ImportError: Failed to import FastAPI app: {e}")
+        print(f"Traceback: {traceback.format_exc()}")
         return None
     except Exception as e:
         # Log the error for debugging but return None
-        print(f"Warning: Failed to create test client: {e}")
+        print(f"Error: Failed to create test client: {e}")
+        print(f"Traceback: {traceback.format_exc()}")
         return None
     finally:
-        if src_path in sys.path:
-            sys.path.remove(src_path)
+        # Don't remove src_path as it might be needed for other imports
+        pass
 
 
 def pytest_configure(config):

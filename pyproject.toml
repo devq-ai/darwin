@@ -75,6 +75,8 @@ python-dotenv = "^1.0.0"
 pyyaml = "^6.0.0"
 click = "^8.1.0"
 jupyter = "^1.0.0"
+pyjwt = "^2.10.1"
+argon2-cffi = "^25.1.0"
 
 [tool.poetry.group.dev.dependencies]
 # Testing
