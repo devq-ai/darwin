@@ -95,12 +95,35 @@ except ImportError as e:
 create_access_control = create_auth_manager = None
 create_security_exception_handler = None
 SecurityConfig = None
+SecurityHeadersMiddleware = RateLimitMiddleware = AuthenticationMiddleware = None
 try:
     from darwin.security import create_access_control, create_auth_manager
     from darwin.security.exceptions import create_security_exception_handler
+    from darwin.security.middleware import (
+        AuthenticationMiddleware,
+        RateLimitMiddleware,
+        SecurityHeadersMiddleware,
+    )
     from darwin.security.models import SecurityConfig
 except ImportError as e:
     if not IS_TEST_MODE:
+        raise e
+
+# Try to import monitoring modules
+setup_monitoring_middleware = None
+create_monitoring_system = None
+try:
+    from darwin.monitoring import (
+        DEFAULT_MONITORING_CONFIG,
+        create_monitoring_system,
+        setup_monitoring_middleware,
+    )
+except ImportError as e:
+    if not IS_TEST_MODE:
+        setup_monitoring_middleware = None
+        create_monitoring_system = None
+        DEFAULT_MONITORING_CONFIG = {}
+    else:
         raise e
 
 # Only import and configure LogFire if not in test mode
@@ -130,6 +153,7 @@ optimization_runs: Dict[str, Dict] = {}
 database_manager: Optional[DatabaseManager] = None
 auth_manager = None
 access_control = None
+monitoring_system = None
 
 
 @asynccontextmanager
@@ -138,7 +162,7 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting Darwin API application")
 
-    global database_manager, auth_manager, access_control
+    global database_manager, auth_manager, access_control, monitoring_system
 
     # Initialize security system
     try:
@@ -169,6 +193,7 @@ async def lifespan(app: FastAPI):
 
         # Set security managers for dependencies
         from darwin.api.dependencies.security import set_security_managers
+
         set_security_managers(auth_manager, access_control)
 
         # Initialize security middleware after auth_manager is created
@@ -192,6 +217,132 @@ async def lifespan(app: FastAPI):
             logger.error(f"Failed to connect to database: {e}")
             raise
 
+    # Initialize monitoring system
+    try:
+        if create_monitoring_system and not IS_TEST_MODE:
+            monitoring_config = DEFAULT_MONITORING_CONFIG.copy()
+            monitoring_config.update(
+                {
+                    "logfire": {
+                        "service_name": "darwin-api",
+                        "service_version": "1.0.0",
+                        "environment": os.getenv("ENVIRONMENT", "development"),
+                        "send_to_logfire": True,
+                        "trace_sample_rate": 1.0,
+                        "log_level": "INFO",
+                    },
+                    "health_checks": {
+                        "check_interval": 60,
+                        "timeout": 10,
+                        "critical_services": [
+                            "database",
+                            "api",
+                            "mcp_server",
+                            "websocket",
+                        ],
+                        "api_url": "http://localhost:8000",
+                        "mcp_port": 3000,
+                        "websocket_port": 8000,
+                    },
+                    "metrics": {
+                        "collection_interval": 30,
+                        "retention_period": 7,
+                        "aggregation_window": 300,
+                        "export_format": "prometheus",
+                    },
+                    "alerts": {
+                        "enable_notifications": True,
+                        "notification_channels": ["email"],
+                        "alert_cooldown": 300,
+                        "escalation_timeout": 900,
+                        "notifications": {
+                            "email": {
+                                "smtp_server": os.getenv("SMTP_SERVER"),
+                                "smtp_port": int(os.getenv("SMTP_PORT", "587")),
+                                "username": os.getenv("SMTP_USERNAME"),
+                                "password": os.getenv("SMTP_PASSWORD"),
+                                "from_email": os.getenv("SMTP_FROM_EMAIL"),
+                                "to_emails": [
+                                    os.getenv("ALERT_EMAIL", "admin@devq.ai")
+                                ],
+                            }
+                        },
+                    },
+                }
+            )
+
+            monitoring_system = setup_monitoring_middleware(app, monitoring_config)
+
+            # Register database session factory with health checker
+            if database_manager and hasattr(monitoring_system, "health"):
+                monitoring_system["health"].register_db_session_factory(
+                    lambda: database_manager.get_session()
+                )
+
+            # Create some default alert rules
+            if hasattr(monitoring_system, "alerts"):
+                alert_manager = monitoring_system["alerts"]
+
+                # High CPU usage alert
+                alert_manager.create_rule(
+                    name="high_cpu_usage",
+                    description="CPU usage is above 90%",
+                    metric_name="darwin_cpu_usage_percent",
+                    condition="gt",
+                    threshold=90,
+                    severity=alert_manager.AlertSeverity.HIGH,
+                    channels=[alert_manager.NotificationChannel.EMAIL],
+                    duration=300,  # 5 minutes
+                )
+
+                # High memory usage alert
+                alert_manager.create_rule(
+                    name="high_memory_usage",
+                    description="Memory usage is above 85%",
+                    metric_name="darwin_memory_usage_bytes",
+                    condition="gt",
+                    threshold=85,
+                    severity=alert_manager.AlertSeverity.HIGH,
+                    channels=[alert_manager.NotificationChannel.EMAIL],
+                    duration=300,
+                )
+
+                # API error rate alert
+                alert_manager.create_rule(
+                    name="high_api_error_rate",
+                    description="API error rate is above 5%",
+                    metric_name="darwin_api_error_rate",
+                    condition="gt",
+                    threshold=5.0,
+                    severity=alert_manager.AlertSeverity.CRITICAL,
+                    channels=[alert_manager.NotificationChannel.EMAIL],
+                    duration=180,  # 3 minutes
+                )
+
+            logger.info("Monitoring system initialized successfully")
+
+            # Start background monitoring tasks
+            import asyncio
+
+            if monitoring_system.get("health"):
+                asyncio.create_task(monitoring_system["health"].start_periodic_checks())
+            if monitoring_system.get("metrics"):
+                asyncio.create_task(
+                    monitoring_system["metrics"].start_periodic_collection()
+                )
+            if monitoring_system.get("alerts"):
+                asyncio.create_task(
+                    monitoring_system["alerts"].start_periodic_evaluation()
+                )
+
+        else:
+            logger.info("Monitoring system not available or in test mode")
+
+    except Exception as e:
+        logger.error(f"Failed to initialize monitoring system: {e}")
+        if not IS_TEST_MODE:
+            pass  # Don't fail startup for monitoring issues
+
     # Configure LogFire for the application only if not in test mode
     if not IS_TEST_MODE and logfire:
         logfire.instrument_fastapi(app)
@@ -200,6 +351,15 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("Shutting down Darwin API application")
+
+    # Cleanup monitoring system
+    if monitoring_system:
+        try:
+            # Stop background tasks and cleanup resources
+            logger.info("Cleaning up monitoring system")
+        except Exception as e:
+            logger.error(f"Error during monitoring system cleanup: {e}")
+
     if database_manager:
         await database_manager.disconnect()
         logger.info("Database connection closed")
@@ -285,7 +445,7 @@ def initialize_security_middleware():
             rate_limits={
                 "/api/v1/auth/login": "5/minute",
                 "/api/v1/auth/register": "3/minute",
-            }
+            },
         )
 
         # Add authentication middleware
@@ -303,7 +463,7 @@ def initialize_security_middleware():
         app.add_middleware(
             AuthenticationMiddleware,
             auth_manager=auth_manager,
-            excluded_paths=excluded_paths
+            excluded_paths=excluded_paths,
         )
 
         logger.info("Security middleware initialized successfully")

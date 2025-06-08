@@ -16,17 +16,22 @@ Features:
 - Custom dashboard integration
 """
 
-import asyncio
 import logging
-import os
 import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict
 from uuid import uuid4
 
-import logfire
-from fastapi import FastAPI, Request, Response
+try:
+    import logfire
+
+    LOGFIRE_AVAILABLE = True
+except ImportError:
+    LOGFIRE_AVAILABLE = False
+    logfire = None
+
+from fastapi import FastAPI, Request
 from starlette.middleware.base import BaseHTTPMiddleware
 
 logger = logging.getLogger(__name__)
@@ -38,7 +43,7 @@ class LogfireManager:
     def __init__(self, config: Dict[str, Any] = None):
         """
         Initialize Logfire manager with configuration.
-        
+
         Args:
             config: Logfire configuration dictionary
         """
@@ -49,15 +54,22 @@ class LogfireManager:
         self.send_to_logfire = self.config.get("send_to_logfire", True)
         self.trace_sample_rate = self.config.get("trace_sample_rate", 1.0)
         self.log_level = self.config.get("log_level", "INFO")
-        
+
         self.is_configured = False
         self.spans = {}
         self.metrics = {}
-        
-        self._configure_logfire()
+
+        if LOGFIRE_AVAILABLE:
+            self._configure_logfire()
+        else:
+            logger.warning("Logfire not available - logging integration disabled")
 
     def _configure_logfire(self):
         """Configure Logfire with Darwin-specific settings."""
+        if not LOGFIRE_AVAILABLE:
+            logger.warning("Logfire not available - skipping configuration")
+            return
+
         try:
             # Configure Logfire
             logfire.configure(
@@ -67,13 +79,13 @@ class LogfireManager:
                 send_to_logfire=self.send_to_logfire,
                 trace_sample_rate=self.trace_sample_rate,
             )
-            
+
             # Set up custom logging
             logging.basicConfig(level=getattr(logging, self.log_level.upper()))
-            
+
             self.is_configured = True
             logger.info(f"Logfire configured for service: {self.service_name}")
-            
+
         except Exception as e:
             logger.error(f"Failed to configure Logfire: {e}")
             self.is_configured = False
@@ -81,10 +93,14 @@ class LogfireManager:
     def configure_for_fastapi(self, app: FastAPI):
         """
         Configure Logfire for FastAPI application.
-        
+
         Args:
             app: FastAPI application instance
         """
+        if not LOGFIRE_AVAILABLE:
+            logger.warning("Logfire not available, skipping FastAPI integration")
+            return
+
         if not self.is_configured:
             logger.warning("Logfire not configured, skipping FastAPI integration")
             return
@@ -92,12 +108,12 @@ class LogfireManager:
         try:
             # Instrument FastAPI with Logfire
             logfire.instrument_fastapi(app)
-            
+
             # Add custom middleware for Darwin-specific monitoring
             app.add_middleware(DarwinMonitoringMiddleware, logfire_manager=self)
-            
+
             logger.info("FastAPI instrumented with Logfire")
-            
+
         except Exception as e:
             logger.error(f"Failed to configure Logfire for FastAPI: {e}")
 
@@ -105,28 +121,32 @@ class LogfireManager:
     def span(self, name: str, **attributes):
         """
         Create a custom span with Darwin context.
-        
+
         Args:
             name: Span name
             **attributes: Additional span attributes
         """
         span_id = str(uuid4())
         start_time = time.time()
-        
+
         try:
-            with logfire.span(name, **attributes) as span:
-                self.spans[span_id] = {
-                    "name": name,
-                    "start_time": start_time,
-                    "attributes": attributes,
-                    "span": span
-                }
-                
-                yield span
-                
+            if LOGFIRE_AVAILABLE and self.is_configured:
+                with logfire.span(name, **attributes) as span:
+                    self.spans[span_id] = {
+                        "name": name,
+                        "start_time": start_time,
+                        "attributes": attributes,
+                        "span": span,
+                    }
+
+                    yield span
+            else:
+                # Mock span when Logfire is not available
+                yield None
+
         except Exception as e:
             logger.error(f"Error in span '{name}': {e}")
-            if span_id in self.spans:
+            if span_id in self.spans and LOGFIRE_AVAILABLE:
                 self.spans[span_id]["span"].set_attribute("error", True)
                 self.spans[span_id]["span"].set_attribute("error_message", str(e))
             raise
@@ -139,32 +159,35 @@ class LogfireManager:
     def log_optimization_start(self, optimizer_id: str, config: Dict[str, Any]):
         """
         Log the start of an optimization run.
-        
+
         Args:
             optimizer_id: Unique optimizer identifier
             config: Optimization configuration
         """
-        logfire.info(
-            "Optimization started",
-            optimizer_id=optimizer_id,
-            population_size=config.get("population_size"),
-            generations=config.get("generations"),
-            mutation_rate=config.get("mutation_rate"),
-            crossover_rate=config.get("crossover_rate"),
-            timestamp=datetime.now(timezone.utc).isoformat()
-        )
+        if LOGFIRE_AVAILABLE and self.is_configured:
+            logfire.info(
+                "Optimization started",
+                optimizer_id=optimizer_id,
+                population_size=config.get("population_size"),
+                generations=config.get("generations"),
+                mutation_rate=config.get("mutation_rate"),
+                crossover_rate=config.get("crossover_rate"),
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+        else:
+            logger.info(f"Optimization started: {optimizer_id}")
 
     def log_optimization_progress(
-        self, 
-        optimizer_id: str, 
-        generation: int, 
+        self,
+        optimizer_id: str,
+        generation: int,
         best_fitness: float,
         average_fitness: float,
-        diversity: float = None
+        diversity: float = None,
     ):
         """
         Log optimization progress.
-        
+
         Args:
             optimizer_id: Unique optimizer identifier
             generation: Current generation number
@@ -172,27 +195,30 @@ class LogfireManager:
             average_fitness: Average population fitness
             diversity: Population diversity metric
         """
-        logfire.info(
-            "Optimization progress",
-            optimizer_id=optimizer_id,
-            generation=generation,
-            best_fitness=best_fitness,
-            average_fitness=average_fitness,
-            diversity=diversity,
-            timestamp=datetime.now(timezone.utc).isoformat()
-        )
+        if LOGFIRE_AVAILABLE and self.is_configured:
+            logfire.info(
+                "Optimization progress",
+                optimizer_id=optimizer_id,
+                generation=generation,
+                best_fitness=best_fitness,
+                average_fitness=average_fitness,
+                diversity=diversity,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+        else:
+            logger.info(f"Optimization progress: {optimizer_id} gen {generation}")
 
     def log_optimization_complete(
-        self, 
-        optimizer_id: str, 
+        self,
+        optimizer_id: str,
         final_fitness: float,
         total_generations: int,
         duration: float,
-        success: bool = True
+        success: bool = True,
     ):
         """
         Log optimization completion.
-        
+
         Args:
             optimizer_id: Unique optimizer identifier
             final_fitness: Final best fitness value
@@ -200,27 +226,30 @@ class LogfireManager:
             duration: Optimization duration in seconds
             success: Whether optimization completed successfully
         """
-        logfire.info(
-            "Optimization completed",
-            optimizer_id=optimizer_id,
-            final_fitness=final_fitness,
-            total_generations=total_generations,
-            duration=duration,
-            success=success,
-            timestamp=datetime.now(timezone.utc).isoformat()
-        )
+        if LOGFIRE_AVAILABLE and self.is_configured:
+            logfire.info(
+                "Optimization completed",
+                optimizer_id=optimizer_id,
+                final_fitness=final_fitness,
+                total_generations=total_generations,
+                duration=duration,
+                success=success,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+        else:
+            logger.info(f"Optimization completed: {optimizer_id}")
 
     def log_api_request(
-        self, 
-        method: str, 
-        path: str, 
+        self,
+        method: str,
+        path: str,
         status_code: int,
         duration: float,
-        user_id: str = None
+        user_id: str = None,
     ):
         """
         Log API request details.
-        
+
         Args:
             method: HTTP method
             path: Request path
@@ -228,55 +257,67 @@ class LogfireManager:
             duration: Request duration in seconds
             user_id: Optional user identifier
         """
-        logfire.info(
-            "API request",
-            method=method,
-            path=path,
-            status_code=status_code,
-            duration=duration,
-            user_id=user_id,
-            timestamp=datetime.now(timezone.utc).isoformat()
-        )
+        if LOGFIRE_AVAILABLE and self.is_configured:
+            logfire.info(
+                "API request",
+                method=method,
+                path=path,
+                status_code=status_code,
+                duration=duration,
+                user_id=user_id,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+        else:
+            logger.info(
+                f"API request: {method} {path} - {status_code} ({duration:.3f}s)"
+            )
 
     def log_error(
-        self, 
-        error: Exception, 
-        context: Dict[str, Any] = None,
-        severity: str = "error"
+        self, error: Exception, context: Dict[str, Any] = None, severity: str = "error"
     ):
         """
         Log error with context information.
-        
+
         Args:
             error: Exception object
             context: Additional context information
             severity: Error severity level
         """
         error_context = context or {}
-        error_context.update({
-            "error_type": type(error).__name__,
-            "error_message": str(error),
-            "severity": severity,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        })
-        
-        if severity == "critical":
-            logfire.error("Critical error occurred", **error_context)
-        elif severity == "warning":
-            logfire.warn("Warning occurred", **error_context)
+        error_context.update(
+            {
+                "error_type": type(error).__name__,
+                "error_message": str(error),
+                "severity": severity,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+
+        if LOGFIRE_AVAILABLE and self.is_configured:
+            if severity == "critical":
+                logfire.error("Critical error occurred", **error_context)
+            elif severity == "warning":
+                logfire.warn("Warning occurred", **error_context)
+            else:
+                logfire.error("Error occurred", **error_context)
         else:
-            logfire.error("Error occurred", **error_context)
+            if severity == "critical":
+                logger.critical(f"Critical error: {error}")
+            elif severity == "warning":
+                logger.warning(f"Warning: {error}")
+            else:
+                logger.error(f"Error: {error}")
 
     def log_performance_metric(
-        self, 
-        metric_name: str, 
+        self,
+        metric_name: str,
         value: float,
         unit: str = None,
-        tags: Dict[str, str] = None
+        tags: Dict[str, str] = None,
     ):
         """
         Log performance metric.
-        
+
         Args:
             metric_name: Name of the metric
             value: Metric value
@@ -287,57 +328,66 @@ class LogfireManager:
             "metric_name": metric_name,
             "value": value,
             "unit": unit,
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
-        
+
         if tags:
             metric_data.update(tags)
-        
-        logfire.info("Performance metric", **metric_data)
+
+        if LOGFIRE_AVAILABLE and self.is_configured:
+            logfire.info("Performance metric", **metric_data)
+        else:
+            logger.info(f"Performance metric: {metric_name} = {value} {unit or ''}")
 
     def log_system_health(self, health_status: Dict[str, Any]):
         """
         Log system health status.
-        
+
         Args:
             health_status: Dictionary containing health check results
         """
-        logfire.info(
-            "System health check",
-            overall_status=health_status.get("status"),
-            checks=health_status.get("checks", {}),
-            timestamp=datetime.now(timezone.utc).isoformat()
-        )
+        if LOGFIRE_AVAILABLE and self.is_configured:
+            logfire.info(
+                "System health check",
+                overall_status=health_status.get("status"),
+                checks=health_status.get("checks", {}),
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+        else:
+            logger.info(f"System health check: {health_status.get('status')}")
 
     def log_websocket_event(
-        self, 
-        event_type: str, 
+        self,
+        event_type: str,
         connection_id: str,
         message_type: str = None,
-        data_size: int = None
+        data_size: int = None,
     ):
         """
         Log WebSocket events.
-        
+
         Args:
             event_type: Type of WebSocket event
             connection_id: WebSocket connection identifier
             message_type: Optional message type
             data_size: Optional data size in bytes
         """
-        logfire.info(
-            "WebSocket event",
-            event_type=event_type,
-            connection_id=connection_id,
-            message_type=message_type,
-            data_size=data_size,
-            timestamp=datetime.now(timezone.utc).isoformat()
-        )
+        if LOGFIRE_AVAILABLE and self.is_configured:
+            logfire.info(
+                "WebSocket event",
+                event_type=event_type,
+                connection_id=connection_id,
+                message_type=message_type,
+                data_size=data_size,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
+        else:
+            logger.info(f"WebSocket event: {event_type} - {connection_id}")
 
     def create_dashboard_link(self) -> str:
         """
         Create a link to the Logfire dashboard for this service.
-        
+
         Returns:
             URL to the service dashboard
         """
@@ -347,7 +397,7 @@ class LogfireManager:
     def get_metrics_summary(self) -> Dict[str, Any]:
         """
         Get summary of logged metrics.
-        
+
         Returns:
             Dictionary containing metrics summary
         """
@@ -357,7 +407,7 @@ class LogfireManager:
             "environment": self.environment,
             "is_configured": self.is_configured,
             "active_spans": len(self.spans),
-            "dashboard_url": self.create_dashboard_link()
+            "dashboard_url": self.create_dashboard_link(),
         }
 
 
@@ -371,50 +421,50 @@ class DarwinMonitoringMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         """
         Process request and add Darwin-specific monitoring.
-        
+
         Args:
             request: FastAPI request object
             call_next: Next middleware in chain
-            
+
         Returns:
             Response object
         """
         start_time = time.time()
         request_id = str(uuid4())
-        
+
         # Add request ID to headers
         request.state.request_id = request_id
-        
+
         try:
             with self.logfire_manager.span(
                 "darwin_api_request",
                 request_id=request_id,
                 method=request.method,
                 path=request.url.path,
-                client_ip=request.client.host if request.client else None
+                client_ip=request.client.host if request.client else None,
             ):
                 response = await call_next(request)
-                
+
                 duration = time.time() - start_time
-                
+
                 # Log request details
                 self.logfire_manager.log_api_request(
                     method=request.method,
                     path=request.url.path,
                     status_code=response.status_code,
                     duration=duration,
-                    user_id=getattr(request.state, "user_id", None)
+                    user_id=getattr(request.state, "user_id", None),
                 )
-                
+
                 # Add monitoring headers
                 response.headers["X-Request-ID"] = request_id
                 response.headers["X-Response-Time"] = f"{duration:.3f}s"
-                
+
                 return response
-                
+
         except Exception as e:
             duration = time.time() - start_time
-            
+
             # Log error
             self.logfire_manager.log_error(
                 error=e,
@@ -422,71 +472,66 @@ class DarwinMonitoringMiddleware(BaseHTTPMiddleware):
                     "request_id": request_id,
                     "method": request.method,
                     "path": request.url.path,
-                    "duration": duration
-                }
+                    "duration": duration,
+                },
             )
-            
+
             raise
 
 
 def configure_logfire_monitoring(
-    app: FastAPI = None,
-    config: Dict[str, Any] = None
+    app: FastAPI = None, config: Dict[str, Any] = None
 ) -> LogfireManager:
     """
     Configure Logfire monitoring for Darwin platform.
-    
+
     Args:
         app: Optional FastAPI application to instrument
         config: Optional configuration dictionary
-        
+
     Returns:
         Configured LogfireManager instance
     """
     logfire_manager = LogfireManager(config)
-    
+
     if app:
         logfire_manager.configure_for_fastapi(app)
-    
+
     return logfire_manager
 
 
 # Context manager for optimization monitoring
 @contextmanager
 def monitor_optimization(
-    logfire_manager: LogfireManager,
-    optimizer_id: str,
-    config: Dict[str, Any]
+    logfire_manager: LogfireManager, optimizer_id: str, config: Dict[str, Any]
 ):
     """
     Context manager for monitoring optimization runs.
-    
+
     Args:
         logfire_manager: LogfireManager instance
         optimizer_id: Unique optimizer identifier
         config: Optimization configuration
     """
     start_time = time.time()
-    
+
     try:
         logfire_manager.log_optimization_start(optimizer_id, config)
-        
+
         with logfire_manager.span(
-            "optimization_run",
-            optimizer_id=optimizer_id,
-            **config
+            "optimization_run", optimizer_id=optimizer_id, **config
         ):
             yield
-            
+
         duration = time.time() - start_time
         logfire_manager.log_optimization_complete(
             optimizer_id=optimizer_id,
             final_fitness=0.0,  # This would be set by the calling code
             total_generations=config.get("generations", 0),
             duration=duration,
-            success=True
+            success=True,
         )
-        
+
     except Exception as e:
         duration = time.time() - start_time
         logfire_manager.log_error(
@@ -494,19 +539,19 @@ def monitor_optimization(
             context={
                 "optimizer_id": optimizer_id,
                 "duration": duration,
-                "config": config
+                "config": config,
             },
-            severity="error"
+            severity="error",
         )
-        
+
         logfire_manager.log_optimization_complete(
             optimizer_id=optimizer_id,
             final_fitness=0.0,
             total_generations=0,
             duration=duration,
-            success=False
+            success=False,
         )
-        
+
         raise
 
 
