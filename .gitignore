@@ -18,6 +18,7 @@ eggs/
 .eggs/
 lib/
 lib64/
+.logfire/
 parts/
 sdist/
 var/
@@ -207,3 +208,5 @@ tasks/
 .env.local
 .env.*.local
 .DS_Store
+.DS_Store
+**/.DS_Store

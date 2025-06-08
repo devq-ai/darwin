@@ -48,6 +48,19 @@ except ImportError as e:
     if not IS_TEST_MODE:
         raise e
 
+# Try to import security components
+SecurityManager = SecurityMiddleware = None
+try:
+    from darwin.security import SecurityConfig, create_auth_manager
+    from darwin.security.middleware import (
+        AuthenticationMiddleware,
+        RateLimitMiddleware,
+        SecurityHeadersMiddleware,
+    )
+except ImportError as e:
+    if not IS_TEST_MODE:
+        raise e
+
 # Try to import database manager
 DatabaseManager = None
 try:
@@ -154,6 +167,13 @@ async def lifespan(app: FastAPI):
 
         logger.info("Security system initialized")
 
+        # Set security managers for dependencies
+        from darwin.api.dependencies.security import set_security_managers
+        set_security_managers(auth_manager, access_control)
+
+        # Initialize security middleware after auth_manager is created
+        initialize_security_middleware()
+
     except Exception as e:
         logger.error(f"Failed to initialize security system: {e}")
         if not IS_TEST_MODE:
@@ -232,9 +252,68 @@ if not IS_TEST_MODE:
         },
     }
 
-    # This would be applied after startup when auth_manager is available
-else:
-    # Simple CORS for testing
+
+def initialize_security_middleware():
+    """Initialize security middleware after auth_manager is available."""
+    global auth_manager, access_control
+
+    if not auth_manager or IS_TEST_MODE:
+        return
+
+    try:
+        # Add CORS middleware first
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=[
+                "http://localhost:3000",
+                "http://localhost:8080",
+                "http://localhost:5173",
+            ],
+            allow_credentials=True,
+            allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
+        )
+
+        # Add security headers middleware
+        app.add_middleware(SecurityHeadersMiddleware)
+
+        # Add rate limiting middleware
+        app.add_middleware(
+            RateLimitMiddleware,
+            default_rate="100/minute",
+            burst_rate="1000/hour",
+            rate_limits={
+                "/api/v1/auth/login": "5/minute",
+                "/api/v1/auth/register": "3/minute",
+            }
+        )
+
+        # Add authentication middleware
+        excluded_paths = [
+            "/docs",
+            "/redoc",
+            "/openapi.json",
+            "/",
+            "/api/v1/health",
+            "/api/v1/auth/login",
+            "/api/v1/auth/register",
+            "/api/v1/auth/refresh",
+        ]
+
+        app.add_middleware(
+            AuthenticationMiddleware,
+            auth_manager=auth_manager,
+            excluded_paths=excluded_paths
+        )
+
+        logger.info("Security middleware initialized successfully")
+
+    except Exception as e:
+        logger.error(f"Failed to initialize security middleware: {e}")
+
+
+# Add CORS middleware for testing
+if IS_TEST_MODE:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
