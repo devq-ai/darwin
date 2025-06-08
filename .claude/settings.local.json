@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(source:*)",
+      "Bash(./verify-tools.sh:*)",
+      "Bash(rm:*)",
+      "Bash(cp:*)",
+      "Bash(find:*)",
+      "Bash(git init:*)",
+      "Bash(git config:*)",
+      "Bash(git branch:*)",
+      "Bash(git remote add:*)",
+      "Bash(git checkout:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(python3:*)",
+      "Bash(grep:*)",
+      "Bash(chmod:*)",
+      "Bash(PYTHONPATH=src python3 src/migrate_surrealdb_to_graphiti.py)",
+      "Bash(cypher-shell:*)",
+      "Bash(curl:*)",
+      "Bash(PYTHONPATH=src python3:*)"
+    ],
+    "deny": []
+  }
+}

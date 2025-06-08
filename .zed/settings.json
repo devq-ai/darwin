@@ -1,0 +1,99 @@
+{
+  "terminal": {
+    "shell": {
+      "program": "/bin/zsh",
+      "args": [
+        "-l",
+        "-c",
+        "cd /Users/dionedge/devqai/darwin && source ~/.zshrc && zsh -i"
+      ]
+    },
+    "working_directory": "current_project_directory",
+    "env": {
+      "PYTHONPATH": "/Users/dionedge/devqai/darwin/src:$PYTHONPATH",
+      "SURREALDB_URL": "ws://localhost:8000/rpc",
+      "SURREALDB_USERNAME": "root",
+      "SURREALDB_PASSWORD": "root",
+      "SURREALDB_NAMESPACE": "darwin",
+      "SURREALDB_DATABASE": "genetic_solver"
+    },
+    "font_family": "MesloLGS NF",
+    "font_size": 14,
+    "line_height": "comfortable"
+  },
+  "theme": "One Dark",
+  "buffer_font_family": "JetBrains Mono",
+  "buffer_font_size": 14,
+  "tab_size": 2,
+  "soft_wrap": "editor_width",
+  "formatter": "auto",
+  "languages": {
+    "Python": {
+      "formatter": {
+        "external": {
+          "command": "black",
+          "arguments": ["-"]
+        }
+      },
+      "format_on_save": "on",
+      "tab_size": 4
+    },
+    "TypeScript": {
+      "formatter": "prettier",
+      "format_on_save": "on",
+      "tab_size": 2
+    },
+    "JavaScript": {
+      "formatter": "prettier",
+      "format_on_save": "on",
+      "tab_size": 2
+    },
+    "JSON": {
+      "formatter": "prettier",
+      "format_on_save": "on",
+      "tab_size": 2
+    }
+  },
+  "lsp": {
+    "pyright": {
+      "settings": {
+        "python": {
+          "analysis": {
+            "typeCheckingMode": "basic",
+            "autoSearchPaths": true,
+            "extraPaths": ["/Users/dionedge/devqai/darwin/src"]
+          }
+        }
+      }
+    }
+  },
+  "git": {
+    "git_gutter": "tracked_files",
+    "inline_blame": {
+      "enabled": true
+    }
+  },
+  "project_panel": {
+    "dock": "left",
+    "default_width": 240
+  },
+  "outline_panel": {
+    "dock": "right"
+  },
+  "collaboration_panel": {
+    "dock": "left"
+  },
+  "file_types": {
+    "Dockerfile": ["Dockerfile*"],
+    "YAML": ["*.yml", "*.yaml"],
+    "Shell Script": ["*.zsh", "*.bash"]
+  },
+  "experimental.theme_overrides": {
+    "players": [
+      {
+        "cursor": "#ff0000",
+        "selection": "#ff000030"
+      }
+    ]
+  }
+}

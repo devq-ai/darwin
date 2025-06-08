@@ -1,0 +1,93 @@
+# DevQ.ai Project-Specific Zsh Configuration
+# Source this file in your terminal session: source .zshrc.local
+
+# Project Environment Variables
+export DEVQAI_ROOT="$(pwd)"
+export PYTHONPATH="$DEVQAI_ROOT:$PYTHONPATH"
+
+# MCP Server Paths
+export MCP_SERVERS_PATH="$DEVQAI_ROOT/mcp/mcp-servers"
+export PTOLEMIES_PATH="$DEVQAI_ROOT/ptolemies"
+
+# Database Configuration
+export SURREALDB_URL="ws://localhost:8000/rpc"
+export SURREALDB_USERNAME="root"
+export SURREALDB_PASSWORD="root"
+export SURREALDB_NAMESPACE="ptolemies"
+export SURREALDB_DATABASE="knowledge"
+
+# Project Aliases
+alias devq-setup="cd $DEVQAI_ROOT && source .zshrc.local"
+alias devq-ptolemies="cd $PTOLEMIES_PATH"
+alias devq-mcp="cd $MCP_SERVERS_PATH"
+alias devq-test="python -m pytest"
+alias devq-format="black . && isort ."
+alias devq-lint="flake8 . && mypy ."
+
+# Development Helpers
+alias activate-venv="source venv/bin/activate"
+alias start-surreal="surreal start --log trace --user root --pass root memory"
+alias verify-db="cd $PTOLEMIES_PATH && python verify-database.py"
+alias setup-db="cd $PTOLEMIES_PATH && ./setup-database.sh"
+
+# MCP Server Management
+alias start-context7="cd $MCP_SERVERS_PATH/context7-mcp && python -m context7_mcp.server"
+alias start-crawl4ai="cd $MCP_SERVERS_PATH/crawl4ai-mcp && python -m crawl4ai_mcp.server"
+alias start-ptolemies="cd $PTOLEMIES_PATH && python -m ptolemies.mcp.ptolemies_mcp"
+
+# Quick Navigation
+alias ag="cd $DEVQAI_ROOT/agentical"
+alias bayes="cd $DEVQAI_ROOT/bayes"
+alias darwin="cd $DEVQAI_ROOT/darwin"
+alias nash="cd $DEVQAI_ROOT/nash"
+alias ptolemies="cd $DEVQAI_ROOT/ptolemies"
+
+# Python Environment
+if [ -f "$DEVQAI_ROOT/venv/bin/activate" ]; then
+    alias venv="source $DEVQAI_ROOT/venv/bin/activate"
+fi
+
+# Git Helpers
+alias gs="git status"
+alias gp="git pull"
+alias gc="git commit -m"
+alias gd="git diff"
+
+# Load environment variables if .env exists
+if [ -f "$DEVQAI_ROOT/.env" ]; then
+    set -a
+    source "$DEVQAI_ROOT/.env"
+    set +a
+fi
+
+# Custom Prompt for DevQ.ai project
+if [[ "$PWD" == *"devqai"* ]]; then
+    PS1="%F{cyan}[DevQ.ai]%f %F{green}%~%f $ "
+fi
+
+# Function to quickly create new components
+function new-component() {
+    if [ -z "$1" ]; then
+        echo "Usage: new-component <component-name>"
+        return 1
+    fi
+    mkdir -p "$DEVQAI_ROOT/$1"
+    cd "$DEVQAI_ROOT/$1"
+    echo "Created and navigated to $1"
+}
+
+# Function to run MCP inspector
+function mcp-inspect() {
+    npx -y @modelcontextprotocol/inspector
+}
+
+# Auto-completion for project directories
+_devqai_dirs() {
+    local dirs=($(ls -d $DEVQAI_ROOT/*/ 2>/dev/null | xargs -n 1 basename))
+    compadd -a dirs
+}
+compdef _devqai_dirs new-component
+
+echo "DevQ.ai project environment loaded!"
+echo "Available aliases: devq-setup, devq-ptolemies, devq-mcp, start-surreal, verify-db"
+echo "Quick navigation: ag, bayes, darwin, nash, ptolemies"

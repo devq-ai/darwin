@@ -1,0 +1,166 @@
+# Docker Compose configuration for Darwin Genetic Algorithm Solver
+services:
+  # Main application service
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    container_name: darwin-app-dev
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+      - /app/.venv  # Exclude virtual environment from volume mount
+    environment:
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - PYTHONPATH=/app/src
+      - LOGFIRE_TOKEN=${LOGFIRE_TOKEN:-}
+      - SURREALDB_URL=ws://surrealdb:8000/rpc
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - surrealdb
+      - redis
+    networks:
+      - darwin-network
+    restart: unless-stopped
+    command: poetry run uvicorn darwin.api.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Production application service (alternative to dev)
+  app-prod:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.prod
+    container_name: darwin-app-prod
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - PYTHONPATH=/app/src
+      - LOGFIRE_TOKEN=${LOGFIRE_TOKEN:-}
+      - SURREALDB_URL=ws://surrealdb:8000/rpc
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - surrealdb
+      - redis
+    networks:
+      - darwin-network
+    restart: unless-stopped
+    profiles:
+      - production
+
+  # SurrealDB database service
+  surrealdb:
+    image: surrealdb/surrealdb:latest
+    container_name: darwin-surrealdb
+    ports:
+      - "8001:8000"
+    volumes:
+      - surrealdb_data:/data
+    environment:
+      - SURREAL_USER=root
+      - SURREAL_PASS=root
+      - SURREAL_NS=darwin
+      - SURREAL_DB=genetic_solver
+    command: >
+      start --log trace --user root --pass root
+      --bind 0.0.0.0:8000
+      file:/data/database.db
+    networks:
+      - darwin-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Redis cache service
+  redis:
+    image: redis:7-alpine
+    container_name: darwin-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-darwin123}
+    networks:
+      - darwin-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Panel dashboard service
+  dashboard:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    container_name: darwin-dashboard
+    ports:
+      - "5006:5006"
+    volumes:
+      - .:/app
+      - /app/.venv
+    environment:
+      - ENVIRONMENT=development
+      - PYTHONPATH=/app/src
+      - SURREALDB_URL=ws://surrealdb:8000/rpc
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - surrealdb
+      - redis
+    networks:
+      - darwin-network
+    restart: unless-stopped
+    command: poetry run panel serve darwin.dashboard.app --show --port 5006 --allow-websocket-origin=*
+
+  # Jupyter notebook service for development
+  jupyter:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    container_name: darwin-jupyter
+    ports:
+      - "8888:8888"
+    volumes:
+      - .:/app
+      - jupyter_data:/app/notebooks
+    environment:
+      - ENVIRONMENT=development
+      - PYTHONPATH=/app/src
+      - JUPYTER_ENABLE_LAB=yes
+    networks:
+      - darwin-network
+    restart: unless-stopped
+    command: >
+      poetry run jupyter lab
+      --ip=0.0.0.0
+      --port=8888
+      --no-browser
+      --allow-root
+      --NotebookApp.token=''
+      --NotebookApp.password=''
+    profiles:
+      - jupyter
+
+# Named volumes for data persistence
+volumes:
+  surrealdb_data:
+    driver: local
+  redis_data:
+    driver: local
+  jupyter_data:
+    driver: local
+
+# Custom network for service communication
+networks:
+  darwin-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

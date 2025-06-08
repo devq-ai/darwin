@@ -1,0 +1,731 @@
+# A. Development Environment
+## Table of Contents
+1. Developer Information
+2. Hardware
+3. IDE and Tools
+4. AI Models
+5. Project Management
+6. Settings
+7. [Dev Report](/Users/dionedge/devqai/devgen/dev_report.md)
+## 1. Developer Information
+- Name: Dion Edge
+- Email: dion@devq.ai
+- Organization: https://github.com/devqai
+## 2. Hardware
+- OS: macOS
+- Hardware: Mac Studio M2 Max
+  - Cores: 12 (8 performance, 4 efficiency)
+  - Memory: 32 GB
+## 3. IDE and Tools
+- IDE: [Zed](/Applications/Zed.app)
+- Terminal: [Ghostty](/Applications/Ghostty.app)
+- Code_Agent: [Claude](https://docs.anthropic.com/en/docs/welcome)
+## 4. AI Models
+- Claude:
+  - Version: 4 Sonnet
+  - Backup Version: 3.7 Sonnet
+  - Provider: Anthropic
+- GPT-4.5:
+  - Version: 4.5
+  - Backup Version: 4.0
+  - Provider: OpenAI
+- Gemini:
+  - Version: 2.5
+  - Backup Version: 2.0
+  - Provider: Google
+## 5. Project Management
+- claude-task-manager
+## 6.Settings
+- [./CLAUDE.md](/Users/dionedge/devqai/CLAUDE.md)
+- [./CHANGELOG.md](/Users/dionedge/devqai/darwin/CHANGELOG.md)
+- (/Users/dionedge/devqai/mcp/mcp-servers.json)
+- [.claude/local.settings.json](/Users/dionedge/devqai/.claude/local.settings.json)
+- [.zed/settings.json](/Users/dionedge/devqai/.zed/settings.json)
+- [.zed/zed-terminal-config.zsh](/Users/dionedge/devqai/.zed/zed-terminal-config.zsh)
+
+# B. Backend Development Rules
+## Code Formatting
+- **Indentation**: 2 spaces
+- **Line Width**: 100 characters
+- **Quotes**: Single quotes
+- **Semicolons**: Required
+## Python Configuration
+- **Version**: 3.12
+- **Formatter**: Black
+- **Line Length**: 88 characters
+- **Import Order**:
+  1. Typing modules
+  2. Standard library
+  3. Third-party
+  4. First-party
+  5. Local imports
+## FastAPI Development Standards
+### Core Development Principles
+- Build to Test while in development
+- Minimum 90% test coverage
+- Use pytest for all testing
+- Implement integration tests for API endpoints
+- Use async test clients for API testing
+- Mock external services in tests
+- Follow Test-Driven Development (TDD) practices
+- Implement comprehensive error handling and validation
+
+### FastAPI Configuration
+- Use Pydantic v2 for all data models
+- Enable OpenAPI documentation by default
+- Configure CORS middleware for frontend integration
+- Implement proper dependency injection patterns
+- Use lifespan events for startup/shutdown logic
+- Configure middleware stack in proper order
+
+### Request/Response Patterns
+- Use Pydantic models for all request/response bodies
+- Implement proper status code responses (200, 201, 204, 400, 401, 403, 404, 422, 500)
+- Use response models to control serialization
+- Implement proper exception handlers
+- Use background tasks for non-blocking operations
+
+### Dependency Injection
+- Create reusable dependencies for common operations
+- Use `Depends()` for database sessions, authentication, and configuration
+- Implement proper dependency scoping (request, application)
+- Use sub-dependencies for complex dependency chains
+- Cache expensive dependencies when appropriate
+### API Structure
+- Use modular router organization
+- Implement dependency injection for shared resources
+- Follow RESTful principles for endpoint design
+- Use Pydantic AI models for request/response validation
+- Implement proper error handling and status codes
+### Code Organization
+
+```
+app/
+├── api/
+│   ├── v1/
+│   │   ├── endpoints/
+│   │   └── dependencies/
+├── core/
+│   ├── config.py
+│   └── security.py
+├── db/
+│   ├── models/
+│   └── repositories/
+├── schemas/
+└── services/
+```
+### Type Hints and Documentation
+- All functions must include type hints
+- Use docstrings for all public functions and classes
+- Follow Google-style docstring format
+- Document all API endpoints with OpenAPI specifications
+### Environment Management
+- Use `.env` files for environment variables
+- Never commit `.env` files to version control
+- Maintain separate environments for development, testing, and production
+### Async/Await Patterns
+- Use async/await for I/O-bound operations
+- Implement proper connection pooling
+- Handle background tasks appropriately
+- Use proper exception handling in async contexts
+## Database Practices
+- Use SQLAlchemy for ORM
+- Implement database migrations with Alembic
+- Use connection pooling
+- Implement proper transaction management
+- Follow async database access patterns
+## Security Standards
+- Implement OAuth2 with JWT tokens
+- Use secure password hashing (Argon2 or bcrypt)
+- Rate limiting on all public endpoints
+- Input validation using Pydantic models
+- CORS configuration for frontend integration
+## Dependency Management
+- Use `requirements.txt` for production dependencies
+- Use `requirements-dev.txt` for development dependencies
+- Pin all dependency versions
+- Regular security audits of dependencies
+## Performance Guidelines
+- Use caching where appropriate
+- Implement pagination for list endpoints
+- Monitor endpoint response times
+- Use background tasks for long-running operations
+## Logging and Monitoring with Logfire
+### Core Logfire Setup
+- Initialize Logfire with project configuration
+- Use structured logging with JSON format
+- Configure automatic instrumentation for FastAPI
+- Set up OpenTelemetry tracing and metrics
+- Implement proper log levels (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+
+### Request/Response Logging
+- Log all API requests and responses automatically
+- Include request ID for correlation
+- Log request duration and response status
+- Capture user context and authentication info
+- Implement rate limiting logging
+
+### Error Tracking and Monitoring
+- Automatic exception tracking and stack traces
+- Custom error handlers with Logfire integration
+- Performance monitoring and slow query detection
+- Database query logging and optimization insights
+- Memory usage and resource consumption tracking
+
+### Production Monitoring
+- Set up alerts for error rates and performance degradation
+- Implement health check endpoints with Logfire metrics
+- Monitor API endpoint performance and usage patterns
+- Track business metrics and user behavior
+- Configure log retention and archival policies
+
+### Development and Debugging
+- Use Logfire's web interface for real-time debugging
+- Implement custom spans for complex operations
+- Add contextual logging for business logic
+- Use structured attributes for searchable logs
+- Implement correlation IDs across service boundaries
+## Documentation Requirements
+- Maintain up-to-date API documentation
+- Document all environment variables
+- Include setup instructions in README
+- Document all breaking changes
+## API Versioning
+- Use URL versioning (e.g., /api/v1/)
+- Maintain backwards compatibility
+- Document breaking changes
+- Implement API deprecation process
+## Production Deployment
+- Use Docker containers if required
+- Implement health checks
+- Set up monitoring
+- Configure auto-scaling
+- Implement backup strategy
+
+# C. Frontend Development Rules
+## Code Formatting
+- **Indentation**: 2 spaces
+- **Line Width**: 100 characters
+- **Quotes**: Single quotes
+- **Semicolons**: Required
+## TypeScript Configuration
+- **Mode**: Strict
+- **Target**: ES2022
+- **Module**: ESNext
+- **Import Order**:
+  1. React imports
+  2. Module imports starting with @/
+  3. Relative imports
+## Technology Stack
+- TypeScript
+- Next.js 14+ (App Router)
+- React Server Components
+- Shadcn UI / Radix UI
+- Tailwind CSS
+## Code Style and Structure
+- Enable strict mode in `tsconfig.json`
+- Use explicit type annotations for function parameters and returns
+- Prefer type inference for variable declarations
+- Use discriminated unions for complex state management
+- Implement proper error handling with custom error types
+## Naming Conventions
+- **Components**: PascalCase (e.g., `UserProfile.tsx`)
+- **Hooks**: camelCase with 'use' prefix (e.g., `useUserData.ts`)
+- **Utils**: camelCase (e.g., `formatDate.ts`)
+- **Types/Interfaces**: PascalCase with descriptive names (e.g., `UserProfileData`)
+- **Boolean variables**: Prefix with auxiliary verbs (is, has, should)
+## Next.js and React Patterns
+### App Router Structure
+```
+app/
+├── (auth)/
+│   ├── login/
+│   └── register/
+├── (dashboard)/
+│   ├── layout.tsx
+│   └── page.tsx
+├── api/
+│   └── trpc/
+├── components/
+│   ├── ui/
+│   └── shared/
+└── lib/
+    ├── utils.ts
+    └── constants.ts
+```
+## Tailwind CSS Guidelines
+- Use mobile-first approach:
+```tsx
+<div className="
+  p-4                  // Base padding
+  sm:p-6               // Tablet
+  md:p-8               // Desktop
+  lg:p-10              // Large screens
+  dark:bg-gray-800     // Dark mode
+">
+```
+## Testing Requirements
+- Use Playwright for end-to-end testing
+- Test critical user flows
+- Include mobile viewport testing
+## Accessibility Standards
+- Implement ARIA labels and roles
+- Ensure keyboard navigation
+- Maintain color contrast ratios
+- Support screen reader
+## Documentation Requirements
+- Maintain up-to-date API documentation
+- Document all environment variables
+- Include setup instructions in README
+- Document all breaking changes
+## Production Deployment
+- Use Docker containers
+- Implement health checks
+- Set up monitoring
+- Configure auto-scaling
+- Implement backup strategy
+## Authentication
+- Implement proper CSRF protection
+- Use secure session management
+- Follow OAuth 2.0 best practices
+## Prototyping Tools
+### Quick Prototypes
+- [Streamlit.io](https://streamlit.io/)
+### Python Visualizations
+- [Panel](https://github.com/holoviz/panel)
+- [Bokeh](https://github.com/bokeh/bokeh)
+- [D3.js](https://github.com/d3/d3)
+## Production Tools
+- [Next.js](https://github.com/nextjs)
+- [Shadcn UI](https://github.com/birobirobiro/
+- [Tailwind CSS](https://github.com/tailwindlabs/
+- [docusaurus](https://docusaurus.io/)
+
+# D. Git Workflow Standards
+## 1. Development Workflow
+### 1.1 Guidelines
+- Always use my GitHub handle: devq-ai
+- Always use the GitHub organization: https://github.com/devq-ai
+- Use my email when needed: dion@devq.ai
+- Use GitHub CLI for all GitHub activity
+- Squash commits on merge
+- Required PR reviews
+- Add "@coderabbitai docstrings" at the end of every commit message
+### 1.2 Operational Order
+1. Create feature branch
+2. Implement changes
+3. Write/update tests
+4. Update documentation
+5. Create PR
+6. Pass CI checks
+7. Code review
+8. Merge to main
+### 1.3 CI/CD Requirements
+- Automated testing on PR
+- Code coverage reporting
+- Security scanning
+- Automated deployments
+- Environment-specific configurations
+## 2. Commit Practices
+### 2.1 Commit Message Format: `type(scope): description`
+### 2.2 Types: feat, fix, docs, style, refactor, test, chore
+### 2.3 Examples
+- `feat(auth): add password reset functionality`
+- `fix(api): resolve null pointer in user route`
+- `docs(readme): update installation instructions`
+## 3. Branch Management
+### 3.1 Branch Naming Conventions
+- `feature/` - New features
+- `bugfix/` - Bug fixes
+- `hotfix/` - Critical fixes for production
+- `release/` - Release preparation
+### 3.2 Branch Lifecycle
+1. Create from latest main
+2. Develop and test changes
+3. Create PR to main
+4. Address review comments
+5. Merge and delete branch
+## 4. Pull Request Process
+### 4.1 Order of Git Commands
+1. `git status` - Check if there are changes to commit
+2. `git add .` - Add changes to staging area (if needed)
+3. `git commit -m "your commit message"` - Commit changes
+4. `git push` - Push changes to remote (if needed)
+5. `git branch` - Check current branch
+6. `git log main..[current branch]` - Log changes on current branch
+7. `git diff --name-status main` - Check files changed
+8. `gh pr create --title "Title goes here..." --body "Example body..."`
+### 4.2 PR Creation Tips
+- Write concise PR title that explains the change
+- Provide detailed description of changes in PR body
+- Link related issues in PR description
+- Avoid including new lines in PR message
+## 5. Code Repository Awareness
+- Search relevant repositories when researching solutions
+- Track repository structures to understand code organization
+- Reference similar implementations from public repositories
+- Store helpful GitHub examples with proper attribution
+## 6. Collaborative Workflows
+- Access issues and PRs to understand project priorities
+- Track relationship between code changes and issue resolution
+- Utilize GitHub history to understand code evolution
+- Reference commit messages for context on implementation decisions
+
+# E. Common Development Rules
+## General Behavior
+- Precision: Prioritize accuracy over speed; verify facts before presenting them
+- Transparency: Clearly indicate when making assumptions or educated guesses
+- Verification: Ask for confirmation when uncertain rather than proceeding with assumptions
+- Context Awareness: Consider the current project context when providing suggestions
+- Assumption Clarification: Explicitly ask for clarification of any assumptions before proceeding with recommendations or actions
+## Code Assistance
+- Style Conformance: Follow project-specific code style rules
+- Documentation: Include appropriate documentation with code suggestions
+- Error Handling: Include robust error handling in all code examples
+- Security: Never suggest code that could introduce security vulnerabilities
+- Testing: Suggest tests for any significant code changes
+- Dependency Management: Only include dependencies that are directly required for the specific task
+- Module Separation: Maintain clear separation between different functional components
+## Communication
+- Format: Use Markdown for all structured responses
+- Clarity: Prioritize clear, concise explanations over technical jargon
+- Examples: Provide concrete examples when explaining concepts
+- Citations: Reference specific files and line numbers when discussing code
+## Security Practices
+- Credentials: Never request credentials directly; always use keychain or environment variables
+- Sensitive Data: Avoid displaying or requesting sensitive information in plain text
+- API Keys: Use stored API keys from keychain rather than requesting new ones
+## Learning and Adaptation
+- Feedback Integration: Incorporate feedback to improve future responses
+- Project Memory: Maintain awareness of project-specific details across sessions
+- Tool Selection: Choose the most appropriate tools for each task based on project context
+## Error Handling
+- Graceful Recovery: When errors occur, provide clear explanations and recovery options
+- Root Cause Analysis: Help identify underlying issues rather than just symptoms
+- Prevention: Suggest preventative measures to avoid similar errors in the future
+- Focus on Essential Problems: Address the core issue first before tackling peripheral problems
+- Task Clarity: Maintain clear focus on the specific task at hand without scope creep
+## Collaboration
+- Respect Workflow: Adapt to the preferred workflow and development patterns
+- Proactive Assistance: Anticipate needs based on context but confirm before major actions
+- Knowledge Sharing: Explain reasoning behind suggestions to facilitate learning
+## Session Context
+- Initialize project memory: at the start of new conversations
+- Check for existing memory: entities related to current workspace
+- Maintain persistent knowledge: about project structure and status
+- Store important file locations: and their purposes across sessions
+## Planner Mode
+- Deeply reflect upon the requested changes
+- Analyze existing code to map the full scope of changes needed
+- Ask 4-6 clarifying questions based on findings
+- Draft a comprehensive plan of action and request approval
+- Once approved, implement all steps in the plan
+- After completing each phase/step, mention progress and next steps
+## Architecture Mode
+- Analyze existing code and requested changes
+- Consider scale, constraints, performance, and requirements
+- Generate a 5-paragraph tradeoff analysis of different design approaches
+- Ask 4-6 clarifying questions about scale and requirements
+- Draft a comprehensive system design architecture and request approval
+- Revise based on feedback until approved
+- Develop an implementation plan and request approval
+- Implement the plan once approved, providing progress updates
+## Debugger Mode
+- Reflect on 5-7 possible sources of the problem
+- Distill to 1-2 most likely sources
+- Add logs to validate assumptions and track data flow
+- Obtain browser logs if relevant
+- Obtain server logs if accessible
+- Analyze the issue comprehensively
+- Suggest additional logs if needed
+- Implement fix and request approval to remove debugging logs
+
+# F. Frameworks
+## 2. Required Back End
+-Web_Framewok: [FastAPI](https://github.com/fastapi/fastapi)
+- Auth: [Better-auth](https://github.com/better-auth/better-auth/)
+- Database_Migration: [Alembic](https://github.com/sqlalchemy/alembic)
+- DB_ToolKit: [SQLAlchemy](https://github.com/sqlalchemy/sqlalchemy)
+- Env_Variables: [Python-dotenv](https://pypi.org/project/python-dotenv/)
+- GitHub_Code_Review: [CodeRabbit](https://github.com/coderabbitai/coderabbit-docs/)
+- Logging: [logfire](https://github.com/pydantic/logfire)
+- Testing: [Pytest](https://pypi.org/project/pytest/)
+
+# I. Testing Standards with PyTest
+## Core PyTest Configuration
+### Project Structure
+```
+tests/
+├── conftest.py              # Shared fixtures and configuration
+├── unit/                    # Unit tests
+│   ├── test_models.py
+│   ├── test_services.py
+│   └── test_utils.py
+├── integration/             # Integration tests
+│   ├── test_api_endpoints.py
+│   ├── test_database.py
+│   └── test_external_services.py
+├── e2e/                     # End-to-end tests
+│   └── test_user_workflows.py
+└── fixtures/                # Test data and fixtures
+    ├── sample_data.json
+    └── mock_responses.py
+```
+
+### PyTest Configuration (pytest.ini)
+```ini
+[tool:pytest]
+minversion = 6.0
+addopts =
+    -ra
+    --strict-markers
+    --strict-config
+    --cov=app
+    --cov-report=term-missing
+    --cov-report=html
+    --cov-fail-under=90
+testpaths = tests
+python_files = test_*.py
+python_classes = Test*
+python_functions = test_*
+markers =
+    unit: Unit tests
+    integration: Integration tests
+    e2e: End-to-end tests
+    slow: Slow running tests
+    external: Tests requiring external services
+```
+
+## Testing Patterns and Practices
+### Fixture Organization
+- Use `conftest.py` for shared fixtures across test modules
+- Implement database fixtures with proper cleanup
+- Create factory fixtures for generating test data
+- Use session, module, and function scoped fixtures appropriately
+- Implement async fixtures for async code testing
+
+### FastAPI Testing with PyTest
+```python
+import pytest
+from fastapi.testclient import TestClient
+from httpx import AsyncClient
+import pytest_asyncio
+
+# Test client fixture
+@pytest.fixture
+def client():
+    from app.main import app
+    return TestClient(app)
+
+# Async test client fixture
+@pytest.fixture
+async def async_client():
+    from app.main import app
+    async with AsyncClient(app=app, base_url="http://test") as ac:
+        yield ac
+
+# Database fixture with cleanup
+@pytest.fixture
+async def db_session():
+    # Setup test database
+    session = create_test_session()
+    yield session
+    # Cleanup
+    await session.rollback()
+    await session.close()
+```
+
+### Test Categories and Organization
+#### Unit Tests
+- Test individual functions and methods in isolation
+- Mock external dependencies and services
+- Focus on business logic and edge cases
+- Achieve 100% code coverage for critical components
+- Use parametrized tests for multiple input scenarios
+
+#### Integration Tests
+- Test API endpoints with real database interactions
+- Test service layer integration with external APIs
+- Verify authentication and authorization flows
+- Test database transactions and rollbacks
+- Validate request/response serialization
+
+#### End-to-End Tests
+- Test complete user workflows
+- Verify cross-service communication
+- Test critical business processes
+- Validate system behavior under load
+- Test deployment and configuration scenarios
+
+### Mock and Patch Strategies
+- Use `pytest-mock` for clean mocking syntax
+- Mock external API calls and third-party services
+- Implement custom mock factories for complex objects
+- Use `responses` library for HTTP request mocking
+- Patch environment variables and configuration
+
+### Async Testing Best Practices
+- Use `pytest-asyncio` for async test support
+- Test async database operations properly
+- Handle async context managers in tests
+- Test concurrent operations and race conditions
+- Verify async exception handling
+
+### Performance and Load Testing
+- Use `pytest-benchmark` for performance regression testing
+- Implement load testing with `locust` integration
+- Test database query performance
+- Monitor memory usage in long-running tests
+- Validate API response times under load
+
+### Test Data Management
+- Use factories (factory_boy) for generating test data
+- Implement database seeding for integration tests
+- Create reusable test datasets
+- Use JSON fixtures for complex test scenarios
+- Implement test data cleanup strategies
+
+### CI/CD Integration
+- Run tests in parallel using `pytest-xdist`
+- Generate test reports in multiple formats (JUnit XML, HTML, JSON)
+- Implement test result caching for faster feedback
+- Use test markers to selectively run test suites
+- Configure test timeouts and resource limits
+
+### Code Coverage Requirements
+- Maintain minimum 90% overall code coverage
+- Require 100% coverage for critical business logic
+- Generate coverage reports in HTML and XML formats
+- Exclude test files and migrations from coverage
+- Monitor coverage trends and prevent regression
+
+### Testing Security and Authentication
+- Test authentication flows with valid/invalid credentials
+- Verify authorization rules and access controls
+- Test JWT token validation and expiration
+- Validate input sanitization and SQL injection prevention
+- Test rate limiting and security headers
+## 4. Computational Frameworks
+- [Genetic-Algorithm](https://github.com/ahmedfgad/GeneticAlgorithmPython/)
+- [SciComPy](https://github.com/yoavram/SciComPy)
+## 5. Database
+- [ ] [surrealdb](https://github.com/surrealdb/surrealdb)
+## 6. Required Front End
+- [ ] [Bokeh](https://github.com/bokeh/bokeh)
+- [ ] [Panel](https://github.com/holoviz/panel)
+
+# G. Ptolemies Knowledge Base
+## 1. Loaded Knowledge Base Documention
+- [x] [fastapi](https://fastapi.tiangolo.com/tutorial/metadata/)
+- [x] [graphiti](https://github.com/getzep/graphiti)
+- [x] [logfire](https://logfire.pydantic.dev/docs/)
+- [x] [surrealdb](https://github.com/surrealdb/surrealdb)
+## 2. Overview
+The Ptolemies Knowledge Base provides a persistent storage system for both system operations and agent tools, implemented using a hybrid database architecture. It combines SurrealDB for graph relationships, real-time capabilities, and application data with specialized vector database capabilities for semantic search.
+This approach stores structured and unstructured information that agents can query, leveraging vector embeddings for semantic search while utilizing SurrealDB's strengths for graph relationships and real-time updates.
+## 3. SurrealDB Storage (Primary Database)
+- Primary storage for knowledge metadata, agent configurations, and application data
+- Native graph relationships between knowledge items and system entities
+- Full-text search with BM25 scoring and custom analyzers
+- Real-time subscriptions for live knowledge updates
+- Multi-tenant support through namespaces and databases
+- ACID transactions ensuring data consistency
+## 4. Vector Database (Semantic Search)
+- Specialized storage for vector embeddings and semantic search
+- High-performance similarity search with optimized indexing
+- Support for large-scale embedding collections
+## 5. Embedding Service
+- Generation of vector embeddings from text content
+- Support for multiple embedding providers (OpenAI, Cohere, local models)
+- Caching of embeddings for performance optimization
+- Batch processing for efficient embedding generation
+- Coordination between SurrealDB and vector database
+## 6. Knowledge Tools
+- Agent-accessible tools for knowledge retrieval
+- Semantic search tools accessing vector database
+- Graph traversal tools for exploring relationships in SurrealDB
+- Context-aware knowledge integration
+- Real-time knowledge update notifications
+## 7. SurrealDB Capabilities
+- **Multi-model flexibility**: Document, graph, and key-value storage in one system
+- **Full-text search**: Robust BM25-based search with custom analyzers and highlighting
+- **Schema evolution**: Schema-less design with optional enforcement supports changing AI requirements
+- **Graph relationships**: Excellent native graph capabilities for modeling complex knowledge relationships
+- **Real-time features**: Live queries enable dynamic knowledge updates and agent notifications
+- **Performance**: ACID transactions, parallel query processing, and strong consistency guarantees
+- **Native vector similarity search**: Vector embedding storage, indexing, and similarity search capabilities
+## 8. Application Use Cases
+- **Knowledge metadata and relationships**: Flexible schema for diverse content types and relationships
+- **Agent orchestration**: Graph modeling of agent interactions and workflow dependencies
+- **Real-time collaboration**: Live updates for multi-agent systems
+- **Application data**: Agent configurations, workflow states, and system metadata
+- **Semantic similarity search**: Embedding-based knowledge retrieval for RAG systems
+- **Agent memory**: Vector-based context and conversation history
+- **Content recommendations**: Similarity-based content suggestions
+- **Cross-modal search**: Future support for image, audio, and video embeddings
+## 9. Storage
+- Store text, code, structured data, and references to media files
+- Support tagging and categorization of knowledge items
+- Maintain relationships between knowledge items
+## 11. Retrieval
+- Semantic search using vector embeddings
+- Filtering by tags, content types, and metadata
+- Relevance scoring of search results
+## 12. Management
+- Add, update, and delete knowledge items
+- Bulk import and export of knowledge
+- Version tracking of knowledge items
+## 13. Integration
+- Expose knowledge retrieval as agent tools
+- Support integration with external knowledge sources
+- Provide API for knowledge management
+## 14. Performance
+- Sub-second response time for knowledge retrieval
+- Support for at least 100,000 knowledge items
+- Efficient storage of vector embeddings
+## 15. Scalability
+- Horizontal scaling for increased knowledge volume
+- Support for distributed deployment
+- Batch processing for large knowledge updates
+## 16. Security
+- Access control for knowledge items
+- Audit logging of knowledge operations
+- Data validation and sanitization
+## 17. Knowledge API
+- CRUD operations for knowledge items and system data
+- Hybrid search combining semantic (vector) and traditional (BM25) search
+- Graph traversal for relationship exploration in SurrealDB
+- Batch processing and bulk import/export
+- Real-time WebSocket endpoints for live updates
+- Cross-database coordination for consistency
+
+# H. Design System
+## Table of Contents
+2. [Priority Colors](#priority-colors)
+3. [UI Elements](#ui-elements)
+4. [Dark Palettes](#dark-palettes)
+## 2. Priority Colors
+- **High**: `#FF10F0` (Neon Pink)
+- **Medium**: `#9D00FF` (Neon Purple)
+- **Low**: `#39FF14` (Neon Green)
+## 3. UI Elements
+- **Card Background**: `#FFFFFF` (white)
+- **List Background**: `#F6F8FA` (light_gray)
+- **Board Background**: `#F0F2F5` (lighter_gray)
+- **Progress Bar Base**: `#E1E4E8` (gray)
+- **Progress Bar Fill**: `#A1D9A0` (pastel_green)
+## 4. Midnight UI (Elegant & Minimal)
+- **Primary**: `#1B03A3` (Neon Blue)
+- **Secondary**: `#9D00FF` (Neon Purple)
+- **Accent**: `#FF10F0` (Neon Pink)
+- **Error**: `#FF3131` (Neon Red)
+- **Success**: `#39FF14` (Neon Green)
+- **Warning**: `#E9FF32` (Neon Yellow)
+- **Info**: `#00FFFF` (Neon Cyan)
+- **Primary Foreground**: `#E3E3E3` (Soft White)
+- **Secondary Foreground**: `#A3A3A3` (Stone Grey)
+- **Disabled Foreground**: `#606770` (Neutral Grey)
+- **Primary Background**: `#010B13` (Rich Black)
+- **Secondary Background**: `#0F1111` (Charcoal Black)
+- **Surface Background**: `#1A1A1A` (Midnight Black)
+- **Overlay Color**: `#121212AA` (Transparent Dark)
