@@ -1,0 +1,500 @@
+# Production Docker Compose configuration for Darwin Genetic Algorithm Solver
+# Optimized for production deployment with monitoring, security, and scalability
+
+version: '3.8'
+
+services:
+  # Production API service with monitoring integration
+  darwin-api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.prod
+    container_name: darwin-api-prod
+    ports:
+      - "8000:8000"
+    volumes:
+      - monitoring_data:/app/monitoring
+      - logs_data:/app/logs
+      - metrics_data:/app/metrics
+      - health_data:/app/health
+    environment:
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - PYTHONPATH=/app/src
+      - LOGFIRE_TOKEN=${LOGFIRE_TOKEN}
+      - SURREALDB_URL=ws://surrealdb:8000/rpc
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - CORS_ORIGINS=${CORS_ORIGINS:-https://darwin.devq.ai}
+      - SMTP_SERVER=${SMTP_SERVER}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USERNAME=${SMTP_USERNAME}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL}
+      - ALERT_EMAIL=${ALERT_EMAIL}
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+      - MONITORING_ENABLED=true
+      - PERFORMANCE_MONITORING=true
+      - HEALTH_CHECK_INTERVAL=30
+      - METRICS_COLLECTION_INTERVAL=15
+      - ALERT_COOLDOWN_PERIOD=300
+      - TRACE_SAMPLE_RATE=0.1
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - darwin-network
+    restart: unless-stopped
+    deploy:
+      replicas: 3
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+      update_config:
+        parallelism: 1
+        delay: 30s
+        order: start-first
+      rollback_config:
+        parallelism: 1
+        delay: 10s
+        order: stop-first
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/detailed"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+
+  # Load balancer for API services
+  nginx:
+    image: nginx:alpine
+    container_name: darwin-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./docker/nginx/ssl:/etc/nginx/ssl
+      - logs_data:/var/log/nginx
+    depends_on:
+      - darwin-api
+    networks:
+      - darwin-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # SurrealDB production database
+  surrealdb:
+    image: surrealdb/surrealdb:latest
+    container_name: darwin-surrealdb-prod
+    ports:
+      - "8001:8000"
+    volumes:
+      - surrealdb_data:/data
+      - ./docker/surrealdb/backup:/backup
+    environment:
+      - SURREAL_USER=${DB_USER:-root}
+      - SURREAL_PASS=${DB_PASSWORD}
+      - SURREAL_NS=darwin_prod
+      - SURREAL_DB=genetic_solver
+      - SURREAL_LOG=info
+    command: >
+      start --log info --user ${DB_USER:-root} --pass ${DB_PASSWORD}
+      --bind 0.0.0.0:8000
+      file:/data/database.db
+    networks:
+      - darwin-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # Redis cache with persistence
+  redis:
+    image: redis:7-alpine
+    container_name: darwin-redis-prod
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+      - ./docker/redis/redis.conf:/usr/local/etc/redis/redis.conf
+    command: redis-server /usr/local/etc/redis/redis.conf --requirepass ${REDIS_PASSWORD}
+    networks:
+      - darwin-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.25'
+        reservations:
+          memory: 256M
+          cpus: '0.1'
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # Production dashboard service
+  dashboard:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.prod
+    container_name: darwin-dashboard-prod
+    ports:
+      - "5006:5006"
+    volumes:
+      - monitoring_data:/app/monitoring
+      - dashboard_data:/app/dashboard
+    environment:
+      - ENVIRONMENT=production
+      - PYTHONPATH=/app/src
+      - SURREALDB_URL=ws://surrealdb:8000/rpc
+      - REDIS_URL=redis://redis:6379
+      - DARWIN_API_URL=http://darwin-api:8000
+      - PANEL_OAUTH_PROVIDER=${OAUTH_PROVIDER:-}
+      - PANEL_OAUTH_KEY=${OAUTH_KEY:-}
+      - PANEL_OAUTH_SECRET=${OAUTH_SECRET:-}
+    depends_on:
+      darwin-api:
+        condition: service_healthy
+      surrealdb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - darwin-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5006"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 90s
+    command: poetry run panel serve darwin.dashboard.app --port 5006 --allow-websocket-origin=*
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  # Prometheus metrics collection
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: darwin-prometheus-prod
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker/prometheus/prometheus.prod.yml:/etc/prometheus/prometheus.yml
+      - ./docker/prometheus/rules:/etc/prometheus/rules
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--storage.tsdb.retention.size=10GB'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    depends_on:
+      darwin-api:
+        condition: service_healthy
+    networks:
+      - darwin-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Grafana monitoring dashboard
+  grafana:
+    image: grafana/grafana:latest
+    container_name: darwin-grafana-prod
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning
+      - ./docker/grafana/dashboards:/var/lib/grafana/dashboards
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_USERS_ALLOW_ORG_CREATE=false
+      - GF_SECURITY_SECRET_KEY=${GRAFANA_SECRET_KEY}
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+      - GF_SERVER_ROOT_URL=https://monitoring.devq.ai
+      - GF_SMTP_ENABLED=true
+      - GF_SMTP_HOST=${SMTP_SERVER}:${SMTP_PORT:-587}
+      - GF_SMTP_USER=${SMTP_USERNAME}
+      - GF_SMTP_PASSWORD=${SMTP_PASSWORD}
+      - GF_SMTP_FROM_ADDRESS=${SMTP_FROM_EMAIL}
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    networks:
+      - darwin-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.25'
+        reservations:
+          memory: 256M
+          cpus: '0.1'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # Alertmanager for handling alerts
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: darwin-alertmanager-prod
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./docker/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - alertmanager_data:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=https://alerts.devq.ai'
+      - '--cluster.advertise-address=0.0.0.0:9093'
+    depends_on:
+      - prometheus
+    networks:
+      - darwin-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.1'
+        reservations:
+          memory: 128M
+          cpus: '0.05'
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9093/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Node exporter for system metrics
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: darwin-node-exporter
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    networks:
+      - darwin-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.1'
+        reservations:
+          memory: 64M
+          cpus: '0.05'
+
+  # Log aggregation service
+  loki:
+    image: grafana/loki:latest
+    container_name: darwin-loki-prod
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./docker/loki/loki.yml:/etc/loki/local-config.yaml
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - darwin-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.25'
+        reservations:
+          memory: 256M
+          cpus: '0.1'
+
+  # Log shipping service
+  promtail:
+    image: grafana/promtail:latest
+    container_name: darwin-promtail-prod
+    volumes:
+      - ./docker/promtail/promtail.yml:/etc/promtail/config.yml
+      - logs_data:/var/log/darwin
+      - /var/log:/var/log:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+    networks:
+      - darwin-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.1'
+        reservations:
+          memory: 128M
+          cpus: '0.05'
+
+# Named volumes for production data persistence
+volumes:
+  surrealdb_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/darwin/data/surrealdb
+  redis_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/darwin/data/redis
+  monitoring_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/darwin/data/monitoring
+  logs_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/darwin/logs
+  metrics_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/darwin/data/metrics
+  health_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/darwin/data/health
+  grafana_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/darwin/data/grafana
+  prometheus_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/darwin/data/prometheus
+  alertmanager_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/darwin/data/alertmanager
+  loki_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/darwin/data/loki
+  dashboard_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/darwin/data/dashboard
+
+# Production network configuration
+networks:
+  darwin-network:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.21.0.0/16
+          gateway: 172.21.0.1
+    driver_opts:
+      com.docker.network.bridge.name: darwin-prod
+      com.docker.network.bridge.enable_icc: "true"
+      com.docker.network.bridge.enable_ip_masquerade: "true"
+      com.docker.network.driver.mtu: 1500

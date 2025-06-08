@@ -1,4 +1,4 @@
-# Docker Compose configuration for Darwin Genetic Algorithm Solver
+# Docker Compose configuration for Darwin Genetic Algorithm Solver with Monitoring
 services:
   # Main application service
   app:
@@ -11,6 +11,8 @@ services:
     volumes:
       - .:/app
       - /app/.venv  # Exclude virtual environment from volume mount
+      - monitoring_data:/app/monitoring
+      - logs_data:/app/logs
     environment:
       - ENVIRONMENT=development
       - DEBUG=true
@@ -18,12 +20,27 @@ services:
       - LOGFIRE_TOKEN=${LOGFIRE_TOKEN:-}
       - SURREALDB_URL=ws://surrealdb:8000/rpc
       - REDIS_URL=redis://redis:6379
+      - SMTP_SERVER=${SMTP_SERVER:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USERNAME=${SMTP_USERNAME:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL:-}
+      - ALERT_EMAIL=${ALERT_EMAIL:-admin@devq.ai}
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
     depends_on:
-      - surrealdb
-      - redis
+      surrealdb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - darwin-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     command: poetry run uvicorn darwin.api.main:app --host 0.0.0.0 --port 8000 --reload
 
   # Production application service (alternative to dev)
@@ -34,6 +51,10 @@ services:
     container_name: darwin-app-prod
     ports:
       - "8000:8000"
+    volumes:
+      - monitoring_data:/app/monitoring
+      - logs_data:/app/logs
+      - metrics_data:/app/metrics
     environment:
       - ENVIRONMENT=production
       - DEBUG=false
@@ -41,12 +62,37 @@ services:
       - LOGFIRE_TOKEN=${LOGFIRE_TOKEN:-}
       - SURREALDB_URL=ws://surrealdb:8000/rpc
       - REDIS_URL=redis://redis:6379
+      - SMTP_SERVER=${SMTP_SERVER:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USERNAME=${SMTP_USERNAME:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL:-}
+      - ALERT_EMAIL=${ALERT_EMAIL:-admin@devq.ai}
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-darwin-production-secret-key-change-in-production}
+      - CORS_ORIGINS=${CORS_ORIGINS:-https://darwin.devq.ai,https://dashboard.devq.ai}
     depends_on:
-      - surrealdb
-      - redis
+      surrealdb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - darwin-network
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/detailed"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     profiles:
       - production
 
@@ -95,7 +141,7 @@ services:
       timeout: 10s
       retries: 3
 
-  # Panel dashboard service
+  # Panel dashboard service with monitoring integration
   dashboard:
     build:
       context: .
@@ -106,17 +152,29 @@ services:
     volumes:
       - .:/app
       - /app/.venv
+      - monitoring_data:/app/monitoring
     environment:
       - ENVIRONMENT=development
       - PYTHONPATH=/app/src
       - SURREALDB_URL=ws://surrealdb:8000/rpc
       - REDIS_URL=redis://redis:6379
+      - DARWIN_API_URL=http://app:8000
     depends_on:
-      - surrealdb
-      - redis
+      app:
+        condition: service_healthy
+      surrealdb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - darwin-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5006"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 90s
     command: poetry run panel serve darwin.dashboard.app --show --port 5006 --allow-websocket-origin=*
 
   # Jupyter notebook service for development
@@ -129,11 +187,19 @@ services:
       - "8888:8888"
     volumes:
       - .:/app
+      - /app/.venv
       - jupyter_data:/app/notebooks
+      - monitoring_data:/app/monitoring
     environment:
       - ENVIRONMENT=development
       - PYTHONPATH=/app/src
       - JUPYTER_ENABLE_LAB=yes
+      - DARWIN_API_URL=http://app:8000
+      - SURREALDB_URL=ws://surrealdb:8000/rpc
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      app:
+        condition: service_healthy
     networks:
       - darwin-network
     restart: unless-stopped
@@ -148,6 +214,59 @@ services:
     profiles:
       - jupyter
 
+  # Monitoring dashboard service (Grafana-style)
+  monitoring:
+    image: grafana/grafana:latest
+    container_name: darwin-monitoring
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin123}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=grafana-clock-panel
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - darwin-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    profiles:
+      - monitoring
+
+  # Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: darwin-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - darwin-network
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
 # Named volumes for data persistence
 volumes:
   surrealdb_data:
@@ -155,6 +274,16 @@ volumes:
   redis_data:
     driver: local
   jupyter_data:
+    driver: local
+  monitoring_data:
+    driver: local
+  logs_data:
+    driver: local
+  metrics_data:
+    driver: local
+  grafana_data:
+    driver: local
+  prometheus_data:
     driver: local
 
 # Custom network for service communication

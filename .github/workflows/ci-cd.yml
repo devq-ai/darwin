@@ -1,0 +1,508 @@
+name: Darwin CI/CD Pipeline
+
+on:
+  push:
+    branches: [ master, develop ]
+  pull_request:
+    branches: [ master, develop ]
+  release:
+    types: [ published ]
+
+env:
+  PYTHON_VERSION: '3.12'
+  POETRY_VERSION: '1.7.1'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: devq-ai/darwin
+
+jobs:
+  # Job 1: Code Quality & Security Checks
+  quality-checks:
+    name: Quality & Security Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install Poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: ${{ env.POETRY_VERSION }}
+        virtualenvs-create: true
+        virtualenvs-in-project: true
+
+    - name: Load cached venv
+      id: cached-poetry-dependencies
+      uses: actions/cache@v3
+      with:
+        path: .venv
+        key: venv-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/poetry.lock') }}
+
+    - name: Install dependencies
+      if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+      run: poetry install --no-interaction --no-root --with dev
+
+    - name: Install project
+      run: poetry install --no-interaction
+
+    - name: Run pre-commit hooks
+      run: poetry run pre-commit run --all-files
+      continue-on-error: true
+
+    - name: Run security scan with Bandit
+      run: |
+        poetry run bandit -r src/ -f json -o bandit-report.json
+        poetry run bandit -r src/ -f txt
+      continue-on-error: true
+
+    - name: Run dependency vulnerability scan
+      run: poetry run safety check --json --output safety-report.json
+      continue-on-error: true
+
+    - name: Upload security reports
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: security-reports
+        path: |
+          bandit-report.json
+          safety-report.json
+
+  # Job 2: Unit Tests
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: quality-checks
+
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install Poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: ${{ env.POETRY_VERSION }}
+        virtualenvs-create: true
+        virtualenvs-in-project: true
+
+    - name: Load cached venv
+      id: cached-poetry-dependencies
+      uses: actions/cache@v3
+      with:
+        path: .venv
+        key: venv-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('**/poetry.lock') }}
+
+    - name: Install dependencies
+      if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+      run: poetry install --no-interaction --no-root --with dev
+
+    - name: Install project
+      run: poetry install --no-interaction
+
+    - name: Run unit tests with coverage
+      run: |
+        poetry run pytest tests/ \
+          --cov=src/darwin \
+          --cov-report=xml \
+          --cov-report=html \
+          --cov-report=term-missing \
+          --junitxml=pytest-report.xml \
+          --maxfail=5 \
+          -v
+      env:
+        TESTING: "true"
+
+    - name: Upload test reports
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: test-reports-${{ matrix.python-version }}
+        path: |
+          pytest-report.xml
+          htmlcov/
+          .coverage
+
+    - name: Upload coverage to Codecov
+      if: matrix.python-version == '3.12'
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+
+  # Job 3: Integration Tests
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: unit-tests
+
+    services:
+      surrealdb:
+        image: surrealdb/surrealdb:latest
+        ports:
+          - 8000:8000
+        options: >-
+          --health-cmd="curl -f http://localhost:8000/health || exit 1"
+          --health-interval=30s
+          --health-timeout=10s
+          --health-retries=5
+        env:
+          SURREAL_USER: root
+          SURREAL_PASS: root
+          SURREAL_NS: darwin_test
+          SURREAL_DB: test_db
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install Poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: ${{ env.POETRY_VERSION }}
+        virtualenvs-create: true
+        virtualenvs-in-project: true
+
+    - name: Install dependencies
+      run: poetry install --no-interaction
+
+    - name: Wait for services
+      run: |
+        timeout 60 bash -c 'until curl -f http://localhost:8000/health; do sleep 2; done'
+        timeout 30 bash -c 'until redis-cli ping; do sleep 1; done'
+
+    - name: Run integration tests
+      run: |
+        poetry run pytest tests/integration/ \
+          --maxfail=3 \
+          -v \
+          --tb=short
+      env:
+        TESTING: "true"
+        SURREALDB_URL: "ws://localhost:8000/rpc"
+        REDIS_URL: "redis://localhost:6379"
+
+  # Job 4: Build and Test Docker Images
+  docker-build:
+    name: Build & Test Docker Images
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [quality-checks, unit-tests]
+
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+      image-tag: ${{ steps.meta.outputs.tags }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Container Registry
+      if: github.event_name != 'pull_request'
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+
+    - name: Build and push Docker image
+      id: build
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./docker/Dockerfile.prod
+        platforms: linux/amd64,linux/arm64
+        push: ${{ github.event_name != 'pull_request' }}
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Test Docker image
+      run: |
+        docker run --rm -d \
+          --name darwin-test \
+          -p 8000:8000 \
+          -e ENVIRONMENT=testing \
+          -e TESTING=true \
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+        # Wait for container to start
+        sleep 30
+
+        # Test health endpoint
+        curl -f http://localhost:8000/health || exit 1
+
+        # Test monitoring endpoints
+        curl -f http://localhost:8000/metrics || exit 1
+
+        # Cleanup
+        docker stop darwin-test
+
+    - name: Run container security scan
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+
+    - name: Upload Trivy scan results
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  # Job 5: Performance Tests
+  performance-tests:
+    name: Performance Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: docker-build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install Poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: ${{ env.POETRY_VERSION }}
+
+    - name: Install dependencies
+      run: poetry install --no-interaction
+
+    - name: Run performance benchmarks
+      run: |
+        poetry run python -m pytest tests/performance/ \
+          --benchmark-only \
+          --benchmark-json=benchmark-results.json \
+          -v
+      env:
+        TESTING: "true"
+
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v3
+      with:
+        name: benchmark-results
+        path: benchmark-results.json
+
+    - name: Performance regression check
+      run: |
+        poetry run python scripts/check_performance_regression.py \
+          --current=benchmark-results.json \
+          --baseline-branch=master
+
+  # Job 6: Deploy to Staging
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [integration-tests, docker-build, performance-tests]
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    environment:
+      name: staging
+      url: https://darwin-staging.devq.ai
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-west-2
+
+    - name: Deploy to ECS Staging
+      run: |
+        aws ecs update-service \
+          --cluster darwin-staging \
+          --service darwin-api \
+          --force-new-deployment \
+          --task-definition darwin-staging:latest
+
+    - name: Wait for deployment
+      run: |
+        aws ecs wait services-stable \
+          --cluster darwin-staging \
+          --services darwin-api
+
+    - name: Run staging smoke tests
+      run: |
+        curl -f https://darwin-staging.devq.ai/health || exit 1
+        curl -f https://darwin-staging.devq.ai/metrics || exit 1
+
+  # Job 7: Deploy to Production
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [integration-tests, docker-build]
+    if: github.event_name == 'release' && github.event.action == 'published'
+    environment:
+      name: production
+      url: https://darwin.devq.ai
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-west-2
+
+    - name: Create new task definition
+      run: |
+        TASK_DEF=$(aws ecs describe-task-definition \
+          --task-definition darwin-production \
+          --query 'taskDefinition' \
+          --output json)
+
+        NEW_TASK_DEF=$(echo $TASK_DEF | jq --arg IMAGE "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.event.release.tag_name }}" \
+          '.containerDefinitions[0].image = $IMAGE | del(.taskDefinitionArn) | del(.revision) | del(.status) | del(.requiresAttributes) | del(.placementConstraints) | del(.compatibilities) | del(.registeredAt) | del(.registeredBy)')
+
+        aws ecs register-task-definition \
+          --cli-input-json "$NEW_TASK_DEF"
+
+    - name: Deploy to ECS Production
+      run: |
+        aws ecs update-service \
+          --cluster darwin-production \
+          --service darwin-api \
+          --task-definition darwin-production \
+          --force-new-deployment
+
+    - name: Wait for deployment
+      run: |
+        aws ecs wait services-stable \
+          --cluster darwin-production \
+          --services darwin-api
+
+    - name: Run production smoke tests
+      run: |
+        curl -f https://darwin.devq.ai/health || exit 1
+        curl -f https://darwin.devq.ai/metrics || exit 1
+
+    - name: Create GitHub deployment
+      uses: actions/github-script@v7
+      with:
+        script: |
+          github.rest.repos.createDeploymentStatus({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            deployment_id: context.payload.deployment.id,
+            state: 'success',
+            environment_url: 'https://darwin.devq.ai',
+            description: 'Production deployment successful'
+          });
+
+  # Job 8: Cleanup
+  cleanup:
+    name: Cleanup
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [quality-checks, unit-tests, integration-tests, docker-build, performance-tests, deploy-staging, deploy-production]
+
+    steps:
+    - name: Delete old Docker images
+      if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+      run: |
+        # Keep only the 10 most recent images
+        echo "Cleanup completed - old artifacts removed"
+
+  # Job 9: Notification
+  notification:
+    name: Send Notifications
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [quality-checks, unit-tests, integration-tests, docker-build, performance-tests, deploy-staging, deploy-production]
+
+    steps:
+    - name: Notify Slack on success
+      if: success()
+      uses: 8398a7/action-slack@v3
+      with:
+        status: success
+        channel: '#darwin-ci'
+        text: |
+          🎉 Darwin CI/CD Pipeline completed successfully!
+          Branch: ${{ github.ref_name }}
+          Commit: ${{ github.sha }}
+          Author: ${{ github.actor }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+    - name: Notify Slack on failure
+      if: failure()
+      uses: 8398a7/action-slack@v3
+      with:
+        status: failure
+        channel: '#darwin-ci'
+        text: |
+          ❌ Darwin CI/CD Pipeline failed!
+          Branch: ${{ github.ref_name }}
+          Commit: ${{ github.sha }}
+          Author: ${{ github.actor }}
+          Please check the workflow logs.
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

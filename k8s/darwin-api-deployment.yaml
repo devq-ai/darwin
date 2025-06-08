@@ -1,0 +1,458 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: darwin-api
+  namespace: darwin-platform
+  labels:
+    app: darwin-api
+    component: backend
+    version: v1.0.0
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: darwin-api
+  template:
+    metadata:
+      labels:
+        app: darwin-api
+        component: backend
+        version: v1.0.0
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: darwin-api
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: darwin-api
+        image: ghcr.io/devq-ai/darwin:latest
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 8000
+          protocol: TCP
+        - name: metrics
+          containerPort: 8000
+          protocol: TCP
+        env:
+        - name: ENVIRONMENT
+          value: "production"
+        - name: DEBUG
+          value: "false"
+        - name: PYTHONPATH
+          value: "/app/src"
+        - name: LOGFIRE_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: darwin-secrets
+              key: logfire-token
+        - name: SURREALDB_URL
+          value: "ws://darwin-surrealdb:8000/rpc"
+        - name: REDIS_URL
+          value: "redis://darwin-redis:6379"
+        - name: JWT_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: darwin-secrets
+              key: jwt-secret-key
+        - name: CORS_ORIGINS
+          valueFrom:
+            configMapKeyRef:
+              name: darwin-config
+              key: cors-origins
+        - name: SMTP_SERVER
+          valueFrom:
+            secretKeyRef:
+              name: darwin-secrets
+              key: smtp-server
+        - name: SMTP_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: darwin-config
+              key: smtp-port
+        - name: SMTP_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: darwin-secrets
+              key: smtp-username
+        - name: SMTP_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: darwin-secrets
+              key: smtp-password
+        - name: SMTP_FROM_EMAIL
+          valueFrom:
+            configMapKeyRef:
+              name: darwin-config
+              key: smtp-from-email
+        - name: ALERT_EMAIL
+          valueFrom:
+            configMapKeyRef:
+              name: darwin-config
+              key: alert-email
+        - name: SLACK_WEBHOOK_URL
+          valueFrom:
+            secretKeyRef:
+              name: darwin-secrets
+              key: slack-webhook-url
+        - name: MONITORING_ENABLED
+          value: "true"
+        - name: PERFORMANCE_MONITORING
+          value: "true"
+        - name: HEALTH_CHECK_INTERVAL
+          value: "30"
+        - name: METRICS_COLLECTION_INTERVAL
+          value: "15"
+        - name: ALERT_COOLDOWN_PERIOD
+          value: "300"
+        - name: TRACE_SAMPLE_RATE
+          value: "0.1"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+          successThreshold: 1
+        readinessProbe:
+          httpGet:
+            path: /health/detailed
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+          successThreshold: 1
+        startupProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 30
+          successThreshold: 1
+        volumeMounts:
+        - name: monitoring-data
+          mountPath: /app/monitoring
+        - name: logs-data
+          mountPath: /app/logs
+        - name: metrics-data
+          mountPath: /app/metrics
+        - name: health-data
+          mountPath: /app/health
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: monitoring-data
+        persistentVolumeClaim:
+          claimName: darwin-monitoring-pvc
+      - name: logs-data
+        persistentVolumeClaim:
+          claimName: darwin-logs-pvc
+      - name: metrics-data
+        persistentVolumeClaim:
+          claimName: darwin-metrics-pvc
+      - name: health-data
+        persistentVolumeClaim:
+          claimName: darwin-health-pvc
+      - name: tmp
+        emptyDir: {}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - darwin-api
+              topologyKey: kubernetes.io/hostname
+      tolerations:
+      - key: "node.kubernetes.io/not-ready"
+        operator: "Exists"
+        effect: "NoExecute"
+        tolerationSeconds: 300
+      - key: "node.kubernetes.io/unreachable"
+        operator: "Exists"
+        effect: "NoExecute"
+        tolerationSeconds: 300
+apiVersion: v1
+kind: Service
+metadata:
+  name: darwin-api
+  namespace: darwin-platform
+  labels:
+    app: darwin-api
+    component: backend
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8000"
+    prometheus.io/path: "/metrics"
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 8000
+    targetPort: http
+    protocol: TCP
+  - name: metrics
+    port: 8001
+    targetPort: metrics
+    protocol: TCP
+  selector:
+    app: darwin-api
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: darwin-api
+  namespace: darwin-platform
+  labels:
+    app: darwin-api
+    component: backend
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: darwin-api-pdb
+  namespace: darwin-platform
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: darwin-api
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: darwin-api-hpa
+  namespace: darwin-platform
+  labels:
+    app: darwin-api
+    component: backend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: darwin-api
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  - type: Pods
+    pods:
+      metric:
+        name: http_requests_per_second
+      target:
+        type: AverageValue
+        averageValue: "100"
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+      - type: Pods
+        value: 2
+        periodSeconds: 60
+      selectPolicy: Max
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: darwin-config
+  namespace: darwin-platform
+  labels:
+    app: darwin-platform
+    component: config
+data:
+  cors-origins: "https://darwin.devq.ai,https://dashboard.devq.ai"
+  smtp-port: "587"
+  smtp-from-email: "noreply@devq.ai"
+  alert-email: "alerts@devq.ai"
+  health-check-interval: "30"
+  metrics-collection-interval: "15"
+  alert-cooldown-period: "300"
+  trace-sample-rate: "0.1"
+  monitoring-enabled: "true"
+  performance-monitoring: "true"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: darwin-secrets
+  namespace: darwin-platform
+  labels:
+    app: darwin-platform
+    component: secrets
+type: Opaque
+stringData:
+  # These should be set via external secret management
+  logfire-token: ""
+  jwt-secret-key: ""
+  smtp-server: ""
+  smtp-username: ""
+  smtp-password: ""
+  slack-webhook-url: ""
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: darwin-monitoring-pvc
+  namespace: darwin-platform
+  labels:
+    app: darwin-platform
+    component: storage
+spec:
+  accessModes:
+  - ReadWriteMany
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: fast-ssd
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: darwin-logs-pvc
+  namespace: darwin-platform
+  labels:
+    app: darwin-platform
+    component: storage
+spec:
+  accessModes:
+  - ReadWriteMany
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: fast-ssd
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: darwin-metrics-pvc
+  namespace: darwin-platform
+  labels:
+    app: darwin-platform
+    component: storage
+spec:
+  accessModes:
+  - ReadWriteMany
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: fast-ssd
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: darwin-health-pvc
+  namespace: darwin-platform
+  labels:
+    app: darwin-platform
+    component: storage
+spec:
+  accessModes:
+  - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: fast-ssd
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: darwin-api-netpol
+  namespace: darwin-platform
+spec:
+  podSelector:
+    matchLabels:
+      app: darwin-api
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: darwin-platform
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 8000
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: darwin-platform
+    ports:
+    - protocol: TCP
+      port: 8000
+    - protocol: TCP
+      port: 6379
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 53
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 587
